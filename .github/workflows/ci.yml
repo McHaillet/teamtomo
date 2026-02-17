@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # --- phase 1: discover packages to test and deploy ---
+  # --- phase 1a: discover packages to test and deploy ---
   detect-changes:
     runs-on: ubuntu-latest
     outputs:
@@ -27,6 +27,52 @@ jobs:
       - name: find packages to test
         id: set-matrix
         run: python .github/scripts/find_packages_to_test_and_deploy.py >> $GITHUB_OUTPUT
+
+  # --- phase 1b: handle coordinated releases ---
+  #     When a tag named `teamtomo@v*` is
+  #     pushed, then all workspace packages
+  #     are tagged and releases triggered
+  coordinate-release:
+    runs-on: ubuntu-latest
+    if: |
+      contains(github.ref, 'teamtomo@v') && 
+      github.ref_type == 'tag' &&
+      github.event_name == 'push'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Extract version from meta-tag
+        id: version
+        run: |
+          TAG_NAME=${{ github.ref_name }}
+          VERSION=${TAG_NAME#teamtomo@}  # Remove 'teamtomo@' prefix
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Coordinated release: $VERSION"
+
+      - name: Tag all workspace packages
+        run: |
+          # Get all packages from workspace
+          PACKAGES=$(python .github/scripts/get_all_packages.py)
+          
+          for pkg_name in $PACKAGES; do
+            TAG="${pkg_name}@${{ steps.version.outputs.version }}"
+            echo "Creating tag: $TAG"
+            if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+              git tag "$TAG"
+            fi
+          done
+
+          git push origin --tags
+
+      - name: Trigger deployment workflow
+        run: |
+          # GitHub Actions picks up the new tags automatically
+          echo "✅ Tagged all packages. Deployment jobs will trigger automatically."
 
   # --- phase 2: test relevant packages ---
   test:
@@ -50,6 +96,9 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            uv.lock
 
       - name: Install Package Dependencies
         run: |
@@ -79,8 +128,7 @@ jobs:
       success() && 
       contains(github.ref, '@v') && 
       github.event_name != 'schedule' && 
-      github.ref_type == 'tag' &&
-      github.event.base_ref == 'refs/heads/main'
+      github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -95,12 +143,23 @@ jobs:
           python-version: "3.13"
       - uses: astral-sh/setup-uv@v7
 
+      - name: verify tag on main branch
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor ${{ github.sha }} origin/main; then
+            echo "Error: Tag is not on main branch. Will not proceed with deployment"
+            exit 1
+          fi
+
       - name: get package name
         id: info
         run: |
           # Extracts 'torch-grid-utils' from 'refs/tags/torch-grid-utils@v1.0.0'
           TAG_NAME=${{ github.ref_name }}
           echo "pkg_name=${TAG_NAME%@*}" >> $GITHUB_OUTPUT
+
+      - name: ⚙️ Install Build Dependencies
+        run: uv sync --dev
 
       - name: 👷 Build Package
         run: uv build --package ${{ steps.info.outputs.pkg_name }}
