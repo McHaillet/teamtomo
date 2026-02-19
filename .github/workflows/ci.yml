@@ -1,9 +1,15 @@
+# --- Testing workflow for all packages in workspace ---
+#
+# This CI workflow runs on pushes to the main branch, pull requests, and on a schedule (weekly).
+# It tests the entire package leveraging the uv workspace to recursively run tests across all
+# know packages and across multiple Python versions (3.11, 3.12, 3.13).
+# NOTE: No deployment or publishing steps are included in this workflow.
+
 name: CI
 
 on:
   push:
     branches: [main]
-    tags: ["*@v*"] # scoped tags e.g. 'torch-grid-utils@v1.0.0'
   pull_request:
   workflow_dispatch:
   schedule:
@@ -14,33 +20,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # --- phase 1: discover packages to test and deploy ---
-  detect-changes:
-    runs-on: ubuntu-latest
-    outputs:
-      packages: ${{ steps.set-matrix.outputs.packages }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0 # Critical for git diff logic in discovery script
-      - uses: astral-sh/setup-uv@v7
-      - name: find packages to test
-        id: set-matrix
-        run: python .github/scripts/find_packages_to_test_and_deploy.py >> $GITHUB_OUTPUT
-
-  # --- phase 2: test relevant packages ---
   test:
-    needs: detect-changes
-    # Don't run if no packages were affected (e.g., only a README change)
-    if: needs.detect-changes.outputs.packages != '[]'
-    # Use the 'name' property for the job display label
-    name: ${{ matrix.package.name }} | ${{ matrix.python-version }}
+    name: Test All Packages | Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
-        package: ${{ fromJson(needs.detect-changes.outputs.packages) }}
 
     steps:
       - uses: actions/checkout@v6
@@ -50,66 +36,17 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            uv.lock
 
-      - name: Install Package Dependencies
-        run: |
-          uv sync \
-            --python ${{ matrix.python-version }} \
-            --no-dev \
-            --group test \
-            --project ${{ matrix.package.path }}
+      - name: Install all workspace dependencies
+        run: uv sync --all-packages --group test
 
-      - name: Print Environment Info
+      - name: Print environment info
         run: |
           uv run python -V
-          uv run which pytest
           uv run pytest --version
 
-      - name: Run Tests
-        run: |
-          uv run pytest ${{ matrix.package.path }} \
-            --cov=${{ matrix.package.path }} \
-            --cov-report=xml
-
-  # --- phase 3: deployment ---
-  deploy:
-    needs: test
-    # If statement selects to only run on version tags pushed to main
-    if: |
-      success() && 
-      contains(github.ref, '@v') && 
-      github.event_name != 'schedule' && 
-      github.ref_type == 'tag' &&
-      github.event.base_ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: write
-
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0 # Needed for hatch-vcs to see tags
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-      - uses: astral-sh/setup-uv@v7
-
-      - name: get package name
-        id: info
-        run: |
-          # Extracts 'torch-grid-utils' from 'refs/tags/torch-grid-utils@v1.0.0'
-          TAG_NAME=${{ github.ref_name }}
-          echo "pkg_name=${TAG_NAME%@*}" >> $GITHUB_OUTPUT
-
-      - name: 👷 Build Package
-        run: uv build --package ${{ steps.info.outputs.pkg_name }}
-
-      - name: 🚢 Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-
-      - name: 📝 Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
-          files: './dist/*'
+      - name: Run all tests
+        run: uv run pytest --cov --cov-report=xml

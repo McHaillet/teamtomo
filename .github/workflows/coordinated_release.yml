@@ -1,0 +1,79 @@
+# --- Coordinated release workflow for whole TeamTomo package ---
+#
+# This workflow triggers after CI completes successfully on the main branch.
+# It checks if the commit has a 'teamtomo@v*' tag, and if so, tags all workspace
+# packages with the same version to trigger individual deployment workflows.
+#
+# Steps:
+# 1. Waits for CI workflow to complete successfully
+# 2. Checks if the commit has a 'teamtomo@v*' tag
+# 3. If found, extracts the version and tags all workspace packages
+# 4. Pushes tags to trigger individual package deployments
+
+name: Coordinate Release
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  coordinate-release:
+    # Only proceed if CI passed
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Check for teamtomo release tag
+        id: check-tag
+        run: |
+          COMMIT_SHA=${{ github.event.workflow_run.head_sha }}
+          echo "Checking commit $COMMIT_SHA for teamtomo@v* tag"
+          
+          # Find all tags pointing to this commit
+          TAGS=$(git tag --points-at $COMMIT_SHA)
+          TEAMTOMO_TAG=$(echo "$TAGS" | grep '^teamtomo@v' | head -n1 || echo "")
+          
+          if [ -z "$TEAMTOMO_TAG" ]; then
+            echo "No teamtomo@v* tag found on this commit"
+            echo "has_tag=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          VERSION=${TEAMTOMO_TAG#teamtomo@}
+          echo "Found release tag: $TEAMTOMO_TAG"
+          echo "has_tag=true" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Tag all workspace packages
+        if: steps.check-tag.outputs.has_tag == 'true'
+        run: |
+          VERSION=${{ steps.check-tag.outputs.version }}
+          echo "Coordinating release: $VERSION"
+          echo "✅ CI already passed for this commit"
+          
+          PACKAGES=$(python .github/scripts/get_all_packages.py)
+          
+          for pkg_name in $PACKAGES; do
+            TAG="${pkg_name}@${VERSION}"
+            echo "Creating tag: $TAG"
+            if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+              git tag "$TAG"
+            else
+              echo "Tag $TAG already exists, skipping"
+            fi
+          done
+
+          git push origin --tags
+          echo "✅ Tagged all packages. Individual deployment jobs will trigger automatically."
