@@ -2,8 +2,9 @@
 #
 # This CI workflow runs on pushes to the main branch, pull requests, and on a schedule (weekly).
 # It tests the entire package leveraging the uv workspace to recursively run tests across all
-# know packages and across multiple Python versions (3.11, 3.12, 3.13).
-# NOTE: No deployment or publishing steps are included in this workflow.
+# known packages and across multiple Python versions (3.11, 3.12, 3.13).
+# NOTE: Deployment is handled by the separate deploy.yaml workflow triggered on package
+# tags; this CI workflow only runs tests and does not publish packages.
 
 name: CI
 
@@ -48,5 +49,7 @@ jobs:
           uv run python -V
           uv run pytest --version
 
+      # NOTE: base pyproject.toml configuration already discovers all packages
+      # in the workspace, so no need to specify paths here.
       - name: Run all tests
-        run: uv run pytest --cov --cov-report=xml
+        run: uv run pytest --cov=packages/ --cov-report=xml

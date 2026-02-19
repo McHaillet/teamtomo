@@ -1,35 +1,47 @@
-import json
-import subprocess
+import sys
+import tomllib
 from pathlib import Path
 
+# Define workspace member glob patterns (same as pyproject.toml)
+PATTERNS = [
+    "packages/io/*/pyproject.toml",
+    "packages/primitives/*/pyproject.toml",
+    "packages/algorithms/*/pyproject.toml",
+    "packages/wip/*/pyproject.toml",
+]
 
-def get_all_packages() -> list[str]:
-    """Get all workspace package names."""
-    workspace_packages = []
 
-    # Define workspace member glob patterns (same as pyproject.toml)
-    patterns = [
-        "packages/io/*/pyproject.toml",
-        "packages/primitives/*/pyproject.toml",
-        "packages/algorithms/*/pyproject.toml",
-        "packages/wip/*/pyproject.toml",
-    ]
+def get_all_packages() -> dict[str, Path]:
+    """Get all workspace package names and their directories."""
+    workspace_packages = {}
 
-    for pattern in patterns:
+    for pattern in PATTERNS:
         for pyproject in Path(".").glob(pattern):
-            # Parse pyproject.toml to get package name
-            content = pyproject.read_text()
+            with open(pyproject, "rb") as f:
+                data = tomllib.load(f)
+                pkg_name = data.get("project", {}).get("name")
+                if pkg_name:
+                    workspace_packages[pkg_name] = pyproject.parent
 
-            for line in content.split("\n"):
-                if line.startswith('name = "'):
-                    pkg_name = line.split('"')[1]
-                    workspace_packages.append(pkg_name)
-                    break
+    return dict(sorted(workspace_packages.items()))
 
-    return sorted(workspace_packages)
+
+def find_package_path(package_name: str) -> Path:
+    """Find the workspace directory for a given package name."""
+    packages = get_all_packages()
+    if package_name not in packages:
+        print(f"ERROR: Package '{package_name}' not found in workspace", file=sys.stderr)
+        print(f"Available packages: {', '.join(packages.keys())}", file=sys.stderr)
+        sys.exit(1)
+    return packages[package_name]
 
 
 if __name__ == "__main__":
-    packages = get_all_packages()
-    for pkg in packages:
-        print(pkg)
+    if len(sys.argv) > 1:
+        # If a package name is provided, print its path
+        path = find_package_path(sys.argv[1])
+        print(path)
+    else:
+        # Otherwise, print all package names
+        for pkg_name in get_all_packages():
+            print(pkg_name)

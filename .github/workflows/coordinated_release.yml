@@ -13,58 +13,62 @@
 name: Coordinate Release
 
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types:
-      - completed
-    branches:
-      - main
+  push:
+    tags:
+      - "teamtomo@v*"
 
 permissions:
   contents: write
 
 jobs:
   coordinate-release:
-    # Only proceed if CI passed
-    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.TEAMTOMO_APP_ID }}
+          private-key: ${{ secrets.TEAMTOMO_APP_PRIVATE_KEY }}
+
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
       - uses: astral-sh/setup-uv@v7
 
-      - name: Check for teamtomo release tag
+      - name: Wait for CI to pass
+        uses: lewagon/wait-on-check-action@v1.5.0
+        with:
+          ref: ${{ github.sha }}
+          check-name: "Test All Packages | Python 3.13"  # NOTE: Must match the CI job name for Python 3.13
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 30
+
+      - name: Extract version from tag
         id: check-tag
         run: |
-          COMMIT_SHA=${{ github.event.workflow_run.head_sha }}
-          echo "Checking commit $COMMIT_SHA for teamtomo@v* tag"
-          
-          # Find all tags pointing to this commit
-          TAGS=$(git tag --points-at $COMMIT_SHA)
-          TEAMTOMO_TAG=$(echo "$TAGS" | grep '^teamtomo@v' | head -n1 || echo "")
-          
-          if [ -z "$TEAMTOMO_TAG" ]; then
-            echo "No teamtomo@v* tag found on this commit"
-            echo "has_tag=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          
-          VERSION=${TEAMTOMO_TAG#teamtomo@}
-          echo "Found release tag: $TEAMTOMO_TAG"
-          echo "has_tag=true" >> $GITHUB_OUTPUT
+          TAG=${GITHUB_REF#refs/tags/}
+          VERSION=${TAG#teamtomo@}
+          echo "Found release tag: $TAG"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Tag all workspace packages
-        if: steps.check-tag.outputs.has_tag == 'true'
         run: |
           VERSION=${{ steps.check-tag.outputs.version }}
           echo "Coordinating release: $VERSION"
-          echo "✅ CI already passed for this commit"
-          
-          PACKAGES=$(python .github/scripts/get_all_packages.py)
-          
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          PACKAGES=$(uv run python .github/scripts/get_all_packages.py)
+
           for pkg_name in $PACKAGES; do
             TAG="${pkg_name}@${VERSION}"
             echo "Creating tag: $TAG"
