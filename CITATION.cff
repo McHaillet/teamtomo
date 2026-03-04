@@ -1,0 +1,53 @@
+cff-version: 1.2.0
+title: teamtomo
+message: "If you use this software, please cite it as below."
+type: software
+repository-code: "https://github.com/teamtomo/teamtomo"
+url: "https://teamtomo.org"
+license: BSD-3-Clause
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.18405652
+authors:
+  - given-names: Yakau
+    family-names: Bubnou
+    alias: ybubnov
+  - given-names: Alister
+    family-names: Burt
+    alias: alisterburt
+  - given-names: Marten
+    family-names: Chaillet
+    alias: McHaillet
+    affiliation: Hubrecht Institute
+    orcid: "https://orcid.org/0000-0001-7231-7742"
+  - given-names: Josh
+    family-names: Dickerson
+    alias: jdickerson95
+  - given-names: Johannes
+    family-names: Elferich
+    alias: jojoelfe
+  - given-names: Chloe
+    family-names: Fisher
+    alias: chlofisher
+  - given-names: Matthew
+    family-names: Giammar
+    alias: mgiammar
+    affiliation: University of California, Berkeley
+  - given-names: Viacheslav
+    family-names: Kralin
+    alias: reddismorr
+  - given-names: Dennis J.
+    family-names: Michalak
+    alias: dmichalak
+  - given-names: Spencer J
+    family-names: Rothfuss
+    alias: sjrothfuss
+    affiliation: Vanderbilt University
+  - given-names: Pranav NM
+    family-names: Shah
+    alias: shahpnmlab
+  - given-names: Philippe
+    family-names: Van der Stappen
+    alias: Phaips
+  - alias: aysecanuenal
+  - alias: rsanchezgarc
