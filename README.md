@@ -1,5 +1,7 @@
 # TeamTomo
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18405652.svg)](https://doi.org/10.5281/zenodo.18405652)
+
 TeamTomo is a set of modular Python package for cryo-EM and cryo-ET for the modern scientific computing environment.
 This unified repository contains most of the core TeamTomo data processing functionality under a single umbrella for better maintainability and cross-package development.
 
