@@ -1,9 +1,9 @@
 cff-version: 1.2.0
-title: teamtomo
+title: "teamtomo: modular Python packages for cryo-EM and cryo-ET"
 message: "If you use this software, please cite it as below."
 type: software
-repository-code: "https://github.com/teamtomo/teamtomo"
-url: "https://teamtomo.org"
+repository-code: https://github.com/teamtomo/teamtomo
+url: https://teamtomo.org
 license: BSD-3-Clause
 identifiers:
   - type: doi
