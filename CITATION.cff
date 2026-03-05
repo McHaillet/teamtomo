@@ -9,9 +9,21 @@ identifiers:
   - type: doi
     value: 10.5281/zenodo.18405652
 authors:
+  - given-names: Benjamin
+    family-names: Barad
+    alias: bbarad
+    affiliation: Oregon Health & Science University
+  - given-names: Ray
+    family-names: Berkeley
+    alias: ray-berkeley
+    affiliation: Scripps Research
   - given-names: Yakau
     family-names: Bubnou
     alias: ybubnov
+  - given-names: Genevieve
+    family-names: Buckley
+    alias: GenevieveBuckley
+    affiliation: Monash University
   - given-names: Alister
     family-names: Burt
     alias: alisterburt
@@ -20,34 +32,137 @@ authors:
     alias: McHaillet
     affiliation: Hubrecht Institute
     orcid: "https://orcid.org/0000-0001-7231-7742"
+  - given-names: Oscar
+    family-names: Despard
+    alias: odespard
+    affiliation: MRC Laboratory of Molecular Biology
+  - given-names: Eric
+    family-names: Deveaud
+    alias: EricDeveaud
+    affiliation: Institut Pasteur
   - given-names: Josh
     family-names: Dickerson
     alias: jdickerson95
   - given-names: Johannes
     family-names: Elferich
     alias: jojoelfe
+  - given-names: Utz
+    family-names: Ermel
+    alias: uermel
+  - given-names: Ryan
+    family-names: Feathers
+    alias: ryanfeathers
   - given-names: Chloe
     family-names: Fisher
     alias: chlofisher
+  - given-names: Lorenzo
+    family-names: Gaifas
+    alias: brisvag
+    affiliation: napari
+  - given-names: Guillaume
+    family-names: Gaullier
+    alias: Guillawme
+    affiliation: Uppsala University
   - given-names: Matthew
     family-names: Giammar
     alias: mgiammar
     affiliation: University of California, Berkeley
+  - given-names: Miles
+    family-names: Graham
+    alias: milesagraham
+  - given-names: Kabilar
+    family-names: Gunalan
+    alias: kabilar
+    affiliation: MIT
+  - given-names: John
+    family-names: Heumann
+    alias: jmheumann
+  - given-names: Thomas
+    family-names: Hoffmann
+    alias: ThomasHoffmann77
+    affiliation: EMBL
+  - given-names: James
+    family-names: Hooker
+    alias: jahooker
+    affiliation: MRC LMB
+  - given-names: Mikel
+    family-names: Izeta
+    alias: ratolon
+    affiliation: CNB-CSIC
+  - given-names: Huw
+    family-names: Jenkins
+    alias: huwjenkins
+  - given-names: Daniel
+    family-names: Ji
+    alias: daniel-ji
+  - given-names: Brady
+    family-names: Johnston
+    alias: BradyAJohnston
+    affiliation: Freelance scientific animator & developer.
+  - given-names: Diyor
+    family-names: Khayrutdinov
+    alias: dijor0310
   - given-names: Viacheslav
     family-names: Kralin
     alias: reddismorr
+  - given-names: Lorenz
+    family-names: Lamm
+    alias: LorenzLamm
+  - given-names: Hanjin
+    family-names: Liu
+    alias: hanjinliu
+  - given-names: Alan R
+    family-names: Lowe
+    alias: quantumjot
   - given-names: Dennis J.
     family-names: Michalak
     alias: dmichalak
+  - given-names: Braxton
+    family-names: Owens
+    alias: braxtonowens
+  - given-names: Gonzalo
+    family-names: Peña-Castellanos
+    alias: goanpeca
+  - given-names: Stephen
+    family-names: Riggs
+    alias: stephen-riggs
+  - given-names: Ricardo
+    family-names: Righetto
+    alias: rdrighetto
   - given-names: Spencer J
     family-names: Rothfuss
     alias: sjrothfuss
     affiliation: Vanderbilt University
+  - given-names: Andreas
+    family-names: Schenk
+    alias: andschenk
+    affiliation: Novartis Institutes for BioMedical Research
   - given-names: Pranav NM
     family-names: Shah
     alias: shahpnmlab
-  - given-names: Philippe
-    family-names: Van der Stappen
+  - given-names: Philippe Van der
+    family-names: Stappen
     alias: Phaips
+  - given-names: Davide
+    family-names: Torre
+    alias: davidetorre99
+  - given-names: Moritz
+    family-names: Wachsmuth-Melm
+    alias: MoritzWM
+  - given-names: Kevin
+    family-names: Yamauchi
+    alias: kevinyamauchi
+    affiliation: Iber Lab - ETH Zürich
+  - alias: alexjnoble
+  - alias: amineuron
+    orcid: "https://orcid.org/0000-0001-9480-5915"
   - alias: aysecanuenal
+  - alias: cormsby626
+  - alias: EuanPyle
+  - given-names: HanyiZhang
+    alias: Hanyi11
+  - alias: MrCurtis
+  - alias: rezaparaancryoem
   - alias: rsanchezgarc
+  - alias: sumslogs
+  - alias: vschwarze

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Update the authors list in CITATION.cff from GitHub contributor data.
 
-Fetches contributors from all repos listed in REPOS below, enriches each
+Fetches contributors from all public repos in the teamtomo org, enriches each
 entry with name, affiliation, and ORCID (from GitHub social accounts), sorts
 alphabetically by family name (alias-only contributors go to the bottom),
 then rewrites the authors section of CITATION.cff.
@@ -26,35 +26,6 @@ CITATION_FILE = REPO_ROOT / "CITATION.cff"
 
 BOT_LOGINS = {"actions-user", "dependabot", "dependabot[bot]", "github-actions[bot]"}
 
-REPOS = [
-    "teamtomo",
-    # Primitives packages
-    "torch-fourier-slice",
-    "torch-fourier-rescale",
-    "torch-fourier-shift",
-    "torch-ctf",
-    "torch-fourier-filter",
-    "torch-fourier-shell-correlation",
-    "torch-image-interpolation",
-    "torch-transform-image",
-    "torch-cubic-spline-grids",
-    "torch-subpixel-crop",
-    "torch-find-peaks",
-    "torch-grid-utils",
-    "torch-so3",
-    "torch-affine-utils",
-    "torch-tilt-series",
-    # Algorithms packages
-    "torch-2dtm",
-    "torch-tiltxcorr",
-    "torch-refine-tilt-axis-angle",
-    "torch-cryoeraser",
-    "torch-segment-fiducials-2d",
-    "torch-segment-tomogram-boundaries",
-    "torch-motion-correction",
-    "torch-ctf-estimation",
-]
-
 
 def github_get(path: str, token: str | None = None) -> list | dict:
     url = f"{GITHUB_API}{path}"
@@ -65,23 +36,26 @@ def github_get(path: str, token: str | None = None) -> list | dict:
     if token:
         req.add_header("Authorization", f"Bearer {token}")
     with urllib.request.urlopen(req) as resp:
-        return json.loads(resp.read().decode())
+        body = resp.read().decode()
+        return json.loads(body) if body.strip() else []
 
 
 def get_contributors(token: str | None = None) -> set[str]:
-    """Return the set of contributor logins across all repos in REPOS."""
+    """Return unique contributor logins across all public repos in the org."""
+    repos = github_get(f"/orgs/{ORG}/repos?per_page=100&type=public", token)
     logins: set[str] = set()
-    for repo in REPOS:
+    for repo in repos:
         try:
             contribs = github_get(
-                f"/repos/{ORG}/{repo}/contributors?per_page=100&anon=false",
+                f"/repos/{ORG}/{repo['name']}/contributors?per_page=100&anon=false",
                 token,
             )
-            for c in contribs:
-                if c.get("type") == "User" and c["login"] not in BOT_LOGINS:
-                    logins.add(c["login"])
-        except urllib.error.HTTPError as e:
-            print(f"  Warning: could not fetch contributors for {repo}: {e}")
+            if isinstance(contribs, list):
+                for c in contribs:
+                    if c.get("type") == "User" and c["login"] not in BOT_LOGINS:
+                        logins.add(c["login"])
+        except (urllib.error.HTTPError, ValueError) as e:
+            print(f"  Warning: could not fetch contributors for {repo['name']}: {e}")
     return logins
 
 
@@ -145,7 +119,7 @@ def update_citation_authors(author_blocks: list[str]) -> None:
 def main() -> None:
     token = os.environ.get("GITHUB_TOKEN")
 
-    print(f"Fetching contributors across {len(REPOS)} repos...")
+    print(f"Fetching contributors across all {ORG} repos...")
     logins = get_contributors(token)
     print(f"Found {len(logins)} contributors\n")
 
