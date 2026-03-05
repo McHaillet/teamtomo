@@ -5,6 +5,7 @@ type: software
 repository-code: https://github.com/teamtomo/teamtomo
 url: https://teamtomo.org
 license: BSD-3-Clause
+doi: 10.5281/zenodo.18405652
 identifiers:
   - type: doi
     value: 10.5281/zenodo.18405652
@@ -74,6 +75,8 @@ authors:
     family-names: Gunalan
     alias: kabilar
     affiliation: MIT
+  - family-names: HanyiZhang
+    alias: Hanyi11
   - given-names: John
     family-names: Heumann
     alias: jmheumann
@@ -159,8 +162,6 @@ authors:
   - alias: aysecanuenal
   - alias: cormsby626
   - alias: EuanPyle
-  - given-names: HanyiZhang
-    alias: Hanyi11
   - alias: MrCurtis
   - alias: rezaparaancryoem
   - alias: rsanchezgarc
