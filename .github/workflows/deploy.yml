@@ -90,9 +90,13 @@ jobs:
             exit 1
           fi
           PKG_NAME=${TAG_NAME%@*}
+          # Strip the "<pkg>@v" prefix to get the PEP 440 version (e.g. 0.5.2, 0.5.2rc1)
+          VERSION=${TAG_NAME#*@}
+          VERSION=${VERSION#v}
           echo "pkg_name=$PKG_NAME" >> "$GITHUB_OUTPUT"
           echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
-          echo "Deploying package: $PKG_NAME"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Deploying package: $PKG_NAME (version $VERSION)"
 
       - name: Install package dependencies
         run: |
@@ -111,10 +115,21 @@ jobs:
             --cov=${{ steps.pkg-dir.outputs.pkg_dir }} --cov-report=xml
 
       - name: Build package
+        # The deploy is triggered by the package's release tag, so the version is
+        # already known unambiguously. Pin it explicitly so the build is immune to
+        # git working-tree state: a dirty tree would otherwise make hatch-vcs
+        # (setuptools-scm) emit a "guess-next-dev" version like 0.5.3.dev0+g<sha>.d<date>,
+        # which PyPI rejects for its local-version segment.
+        env:
+          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.info.outputs.version }}
         run: uv build --package ${{ steps.info.outputs.pkg_name }}
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # Make re-runs idempotent: if a package version was already uploaded in a
+          # previous (partial) fan-out, skip it instead of failing with a 400.
+          skip-existing: true
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
