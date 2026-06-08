@@ -59,6 +59,7 @@ jobs:
 
           # Query check runs (GitHub Actions reports as check runs, not commit statuses)
           CI_CONCLUSION=$(gh api "repos/${{ github.repository }}/commits/$COMMIT_SHA/check-runs" \
+            --paginate \
             --jq '.check_runs[] | select(.name | startswith("Test All Packages")) | .conclusion' \
             | sort -u)
 
