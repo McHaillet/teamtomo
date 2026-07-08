@@ -1,9 +1,24 @@
 import warnings
 
+import pytest
 import torch
 
 warnings.filterwarnings(action="ignore", category=UserWarning, module="tiler")
 from torch_segment_fiducials_2d.model import ResidualUNet18
+
+
+@pytest.fixture(autouse=True)
+def _single_threaded_torch():
+    """Pin torch to a single CPU thread for this module.
+
+    CI runners hit pathologically slow multi-threaded CPU convolutions here
+    (test_model.py went from ~5s locally to ~105-176s in CI); single-threaded
+    execution avoids that without affecting other test modules.
+    """
+    original = torch.get_num_threads()
+    torch.set_num_threads(1)
+    yield
+    torch.set_num_threads(original)
 
 
 def test_model_instantiation():
