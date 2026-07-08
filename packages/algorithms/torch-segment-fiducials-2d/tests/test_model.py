@@ -1,6 +1,5 @@
 import warnings
 
-import pytest
 import torch
 
 warnings.filterwarnings(action="ignore", category=UserWarning, module="tiler")
@@ -21,7 +20,6 @@ def test_model_call():
     assert out.shape == (2, 2, 128, 128)
 
 
-@pytest.mark.slow
 def test_model_predict_step():
     """Test auto tiled prediction of larger single images.
 
