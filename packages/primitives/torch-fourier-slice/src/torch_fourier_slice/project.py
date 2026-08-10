@@ -87,7 +87,7 @@ def project_3d_to_2d(
 
     # calculate DFT
     # volume center to array origin
-    dft = torch.fft.fftshift(volume, dim=(-3, -2, -1))
+    dft = torch.fft.ifftshift(volume, dim=(-3, -2, -1))
     dft = torch.fft.rfftn(dft, dim=(-3, -2, -1))
 
     dft[..., 0, 0, 0] = 0.0  # Zero out mean to avoid low-res artifacts
@@ -122,8 +122,8 @@ def project_3d_to_2d(
 
     # transform back to real space
     projections = torch.fft.ifftshift(projections, dim=(-2,))  # ifftshift of 2D rfft
-    projections = torch.fft.irfftn(projections, dim=(-2, -1))
-    projections = torch.fft.ifftshift(
+    projections = torch.fft.irfftn(projections, dim=(-2, -1), s=volume_shape[-2:])
+    projections = torch.fft.fftshift(
         projections, dim=(-2, -1)
     )  # recenter 2D image in real space
 
@@ -216,7 +216,7 @@ def project_3d_to_2d_multichannel(
 
     # calculate DFT
     # volume center to array origin
-    dft = torch.fft.fftshift(volume, dim=(-3, -2, -1))
+    dft = torch.fft.ifftshift(volume, dim=(-3, -2, -1))
     dft = torch.fft.rfftn(dft, dim=(-3, -2, -1))
     # actual fftshift of 3D rfft
     dft = torch.fft.fftshift(dft, dim=(-3, -2))
@@ -250,8 +250,8 @@ def project_3d_to_2d_multichannel(
 
     # transform back to real space
     projections = torch.fft.ifftshift(projections, dim=(-2,))  # ifftshift of 2D rfft
-    projections = torch.fft.irfftn(projections, dim=(-2, -1))
-    projections = torch.fft.ifftshift(
+    projections = torch.fft.irfftn(projections, dim=(-2, -1), s=volume_shape[-2:])
+    projections = torch.fft.fftshift(
         projections, dim=(-2, -1)
     )  # recenter 2D image in real space
 
@@ -317,7 +317,7 @@ def project_2d_to_1d(
     image = image * torch.sinc(grid) ** 2
 
     # calculate DFT
-    dft = torch.fft.fftshift(image, dim=(-2, -1))  # image center to array origin
+    dft = torch.fft.ifftshift(image, dim=(-2, -1))  # image center to array origin
     dft = torch.fft.rfftn(dft, dim=(-2, -1))
     dft = torch.fft.fftshift(dft, dim=(-2,))  # actual fftshift of 2D rfft
 
@@ -332,8 +332,8 @@ def project_2d_to_1d(
 
     # transform back to real space
     # not needed for 1D: torch.fft.ifftshift(projections, dim=(-2,))
-    projections = torch.fft.irfftn(projections, dim=(-1))
-    projections = torch.fft.ifftshift(
+    projections = torch.fft.irfftn(projections, dim=(-1), s=image_shape[-1:])
+    projections = torch.fft.fftshift(
         projections, dim=(-1)
     )  # recenter line in real space
 
