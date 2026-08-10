@@ -100,11 +100,14 @@ def backproject_2d_to_3d(
     dft = torch.fft.irfftn(dft, dim=(-3, -2, -1))
     dft = torch.fft.ifftshift(dft, dim=(-3, -2, -1))  # center in real space
 
-    # correct for convolution with linear interpolation kernel
+    # correct for convolution with linear interpolation kernel. The kernel is
+    # separable per-axis, so the correction is a product of 1D sincs, not
+    # the sinc of the radial frequency. See issue #65 for more info.
     grid = fftfreq_grid(
-        image_shape=dft.shape, rfft=False, fftshift=True, norm=True, device=dft.device
+        image_shape=dft.shape, rfft=False, fftshift=True, norm=False, device=dft.device
     )
-    dft = dft / torch.sinc(grid) ** 2
+    sinc = torch.sinc(grid[..., 0]) * torch.sinc(grid[..., 1]) * torch.sinc(grid[..., 2])
+    dft = dft / sinc**2
 
     # unpad
     if pad_factor > 1.0:
@@ -205,15 +208,18 @@ def backproject_2d_to_3d_multichannel(
     dft = torch.fft.irfftn(dft, dim=(-3, -2, -1))
     dft = torch.fft.ifftshift(dft, dim=(-3, -2, -1))  # center in real space
 
-    # correct for convolution with linear interpolation kernel
+    # correct for convolution with linear interpolation kernel. The kernel is
+    # separable per-axis, so the correction is a product of 1D sincs, not
+    # the sinc of the radial frequency. See issue #65 for more info.
     grid = fftfreq_grid(
         image_shape=dft.shape[-3:],
         rfft=False,
         fftshift=True,
-        norm=True,
+        norm=False,
         device=dft.device,
     )
-    dft = dft / torch.sinc(grid) ** 2
+    sinc = torch.sinc(grid[..., 0]) * torch.sinc(grid[..., 1]) * torch.sinc(grid[..., 2])
+    dft = dft / sinc**2
 
     # unpad
     if pad_factor > 1.0:
