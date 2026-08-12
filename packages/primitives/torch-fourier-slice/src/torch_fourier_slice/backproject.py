@@ -72,7 +72,7 @@ def backproject_2d_to_3d(
     volume_shape = (w, w, w)
 
     # calculate DFTs of images
-    images = torch.fft.fftshift(images, dim=(-2, -1))  # volume center to array origin
+    images = torch.fft.ifftshift(images, dim=(-2, -1))  # volume center to array origin
     images = torch.fft.rfftn(images, dim=(-2, -1))
     images = torch.fft.fftshift(images, dim=(-2,))  # actual fftshift
 
@@ -97,8 +97,8 @@ def backproject_2d_to_3d(
 
     # back to real space
     dft = torch.fft.ifftshift(dft, dim=(-3, -2))  # actual ifftshift
-    dft = torch.fft.irfftn(dft, dim=(-3, -2, -1))
-    dft = torch.fft.ifftshift(dft, dim=(-3, -2, -1))  # center in real space
+    dft = torch.fft.irfftn(dft, dim=(-3, -2, -1), s=volume_shape)
+    dft = torch.fft.fftshift(dft, dim=(-3, -2, -1))  # center in real space
 
     # correct for convolution with linear interpolation kernel. The kernel is
     # separable per-axis, so the correction is a product of 1D sincs, not
@@ -180,7 +180,7 @@ def backproject_2d_to_3d_multichannel(
     volume_shape = (w, w, w)
 
     # calculate DFTs of images
-    images = torch.fft.fftshift(images, dim=(-2, -1))  # volume center to array origin
+    images = torch.fft.ifftshift(images, dim=(-2, -1))  # volume center to array origin
     images = torch.fft.rfftn(images, dim=(-2, -1))
     images = torch.fft.fftshift(images, dim=(-2,))  # actual fftshift
 
@@ -205,8 +205,8 @@ def backproject_2d_to_3d_multichannel(
 
     # back to real space
     dft = torch.fft.ifftshift(dft, dim=(-3, -2))  # actual ifftshift
-    dft = torch.fft.irfftn(dft, dim=(-3, -2, -1))
-    dft = torch.fft.ifftshift(dft, dim=(-3, -2, -1))  # center in real space
+    dft = torch.fft.irfftn(dft, dim=(-3, -2, -1), s=volume_shape)
+    dft = torch.fft.fftshift(dft, dim=(-3, -2, -1))  # center in real space
 
     # correct for convolution with linear interpolation kernel. The kernel is
     # separable per-axis, so the correction is a product of 1D sincs, not
