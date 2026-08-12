@@ -75,9 +75,6 @@ def project_3d_to_2d(
     if pad_factor < 1.0:
         raise ValueError("pad_factor must be >= 1.0")
 
-    # Compute the mean from the original, unpadded volume
-    volume_mean = volume.mean()
-
     # Apply edge padding to the nearest integer matching the desired pad_factor
     if pad_factor > 1.0:
         p = int((w * (pad_factor - 1.0)) // 2)
@@ -106,8 +103,6 @@ def project_3d_to_2d(
     # volume center to array origin
     dft = torch.fft.ifftshift(volume, dim=(-3, -2, -1))
     dft = torch.fft.rfftn(dft, dim=(-3, -2, -1))
-
-    dft[..., 0, 0, 0] = 0.0  # Zero out mean to avoid low-res artifacts
 
     # fftshift the transformed volume so DC is at center
     dft = torch.fft.fftshift(dft, dim=(-3, -2))
@@ -147,9 +142,6 @@ def project_3d_to_2d(
     # unpad
     if pad_factor > 1.0:
         projections = F.pad(projections, pad=[-p] * 4)
-
-    # Account for the subtracted off mean value for the DFT
-    projections += volume_mean * d
 
     return projections
 
@@ -215,9 +207,6 @@ def project_3d_to_2d_multichannel(
     if pad_factor < 1.0:
         raise ValueError("pad_factor must be >= 1.0")
 
-    # Compute the (per-channel) mean from the original, unpadded volume.
-    volume_mean = volume.mean(dim=(-3, -2, -1))
-
     if pad_factor > 1.0:
         p = int((volume.shape[-1] * (pad_factor - 1.0)) // 2)
         volume = F.pad(volume, pad=[p] * 6)
@@ -245,7 +234,6 @@ def project_3d_to_2d_multichannel(
     # volume center to array origin
     dft = torch.fft.ifftshift(volume, dim=(-3, -2, -1))
     dft = torch.fft.rfftn(dft, dim=(-3, -2, -1))
-    dft[..., 0, 0, 0] = 0.0  # Zero out mean to avoid low-res artifacts
     # actual fftshift of 3D rfft
     dft = torch.fft.fftshift(dft, dim=(-3, -2))
 
@@ -287,9 +275,6 @@ def project_3d_to_2d_multichannel(
     if pad_factor > 1.0:
         projections = F.pad(projections, pad=[-p] * 4)
 
-    # Account for the subtracted off (per-channel) mean value for the DFT.
-    # Scales by the original, unpadded size d.
-    projections = projections + volume_mean[..., None, None] * d
     return projections
 
 
@@ -332,9 +317,6 @@ def project_2d_to_1d(
     if pad_factor < 1.0:
         raise ValueError("pad_factor must be >= 1.0")
 
-    # Compute the mean from the original, unpadded image.
-    image_mean = image.mean()
-
     if pad_factor > 1.0:
         p = int((image.shape[-1] * (pad_factor - 1.0)) // 2)
         image = F.pad(image, pad=[p] * 4)
@@ -359,7 +341,6 @@ def project_2d_to_1d(
     # calculate DFT
     dft = torch.fft.ifftshift(image, dim=(-2, -1))  # image center to array origin
     dft = torch.fft.rfftn(dft, dim=(-2, -1))
-    dft[..., 0, 0] = 0.0  # Zero out mean to avoid low-res artifacts
     dft = torch.fft.fftshift(dft, dim=(-2,))  # actual fftshift of 2D rfft
 
     # make projections by taking central slices
@@ -381,8 +362,5 @@ def project_2d_to_1d(
     # unpad
     if pad_factor > 1.0:
         projections = F.pad(projections, pad=[-p] * 2)
-
-    # Account for the subtracted off mean value for the DFT.
-    projections = projections + image_mean * w
 
     return projections
