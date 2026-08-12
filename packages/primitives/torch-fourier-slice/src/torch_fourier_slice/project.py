@@ -81,16 +81,28 @@ def project_3d_to_2d(
         edge_value = compute_cube_face_averages(volume, n=4)  # 4 is arbitrary
         volume = F.pad(volume, pad=[p] * 6, mode="constant", value=edge_value)
 
-    # Track volume shape and mean as variables
     volume_shape = tuple(volume.shape[-3:])
-    volume_mean = volume.mean()
+
+    # divide by sinc^2 in real space to correct for the effect of trilinear
+    # interpolation during slice extraction. The interpolation kernel is
+    # separable per-axis, so the correction is a product of 1D sincs, not
+    # the sinc of the radial frequency. See issue #65 for more info.
+    grid = fftfreq_grid(
+        image_shape=volume_shape,
+        rfft=False,
+        fftshift=True,
+        norm=False,
+        device=volume.device,
+    )
+    sinc = (
+        torch.sinc(grid[..., 0]) * torch.sinc(grid[..., 1]) * torch.sinc(grid[..., 2])
+    )
+    volume = volume / sinc**2
 
     # calculate DFT
     # volume center to array origin
     dft = torch.fft.ifftshift(volume, dim=(-3, -2, -1))
     dft = torch.fft.rfftn(dft, dim=(-3, -2, -1))
-
-    dft[..., 0, 0, 0] = 0.0  # Zero out mean to avoid low-res artifacts
 
     # fftshift the transformed volume so DC is at center
     dft = torch.fft.fftshift(dft, dim=(-3, -2))
@@ -130,9 +142,6 @@ def project_3d_to_2d(
     # unpad
     if pad_factor > 1.0:
         projections = F.pad(projections, pad=[-p] * 4)
-
-    # Account for the subtracted off mean value for the DFT
-    projections += volume_mean * d
 
     return projections
 
@@ -197,6 +206,7 @@ def project_3d_to_2d_multichannel(
 
     if pad_factor < 1.0:
         raise ValueError("pad_factor must be >= 1.0")
+
     if pad_factor > 1.0:
         p = int((volume.shape[-1] * (pad_factor - 1.0)) // 2)
         volume = F.pad(volume, pad=[p] * 6)
@@ -204,15 +214,21 @@ def project_3d_to_2d_multichannel(
     # set the shape as a variable
     volume_shape = tuple(volume.shape[-3:])
 
-    # premultiply by sinc2
+    # divide by sinc^2 in real space to correct for the effect of trilinear
+    # interpolation during slice extraction. The interpolation kernel is
+    # separable per-axis, so the correction is a product of 1D sincs, not
+    # the sinc of the radial frequency. See issue #65 for more info.
     grid = fftfreq_grid(
         image_shape=volume_shape,
         rfft=False,
         fftshift=True,
-        norm=True,
+        norm=False,
         device=volume.device,
     )
-    volume = volume * torch.sinc(grid) ** 2
+    sinc = (
+        torch.sinc(grid[..., 0]) * torch.sinc(grid[..., 1]) * torch.sinc(grid[..., 2])
+    )
+    volume = volume / sinc**2
 
     # calculate DFT
     # volume center to array origin
@@ -258,6 +274,7 @@ def project_3d_to_2d_multichannel(
     # unpad
     if pad_factor > 1.0:
         projections = F.pad(projections, pad=[-p] * 4)
+
     return projections
 
 
@@ -299,6 +316,7 @@ def project_2d_to_1d(
 
     if pad_factor < 1.0:
         raise ValueError("pad_factor must be >= 1.0")
+
     if pad_factor > 1.0:
         p = int((image.shape[-1] * (pad_factor - 1.0)) // 2)
         image = F.pad(image, pad=[p] * 4)
@@ -306,15 +324,19 @@ def project_2d_to_1d(
     # set the shape as a variable
     image_shape = tuple(image.shape[-2:])
 
-    # premultiply by sinc2
+    # divide by sinc^2 in real space to correct for the effect of linear
+    # interpolation during slice extraction. The interpolation kernel is
+    # separable per-axis, so the correction is a product of 1D sincs, not
+    # the sinc of the radial frequency. See issue #65 for more info.
     grid = fftfreq_grid(
         image_shape=image_shape,
         rfft=False,
         fftshift=True,
-        norm=True,
+        norm=False,
         device=image.device,
     )
-    image = image * torch.sinc(grid) ** 2
+    sinc = torch.sinc(grid[..., 0]) * torch.sinc(grid[..., 1])
+    image = image / sinc**2
 
     # calculate DFT
     dft = torch.fft.ifftshift(image, dim=(-2, -1))  # image center to array origin
