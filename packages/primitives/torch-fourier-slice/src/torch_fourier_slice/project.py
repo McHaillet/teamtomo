@@ -9,7 +9,7 @@ from .slice_extraction import (
     transform_slice_2d,
     transform_slice_2d_multichannel,
 )
-from .volume_utils import compute_cube_face_averages
+from .volume_utils import compute_cube_face_averages, compute_square_edge_averages
 
 
 def project_3d_to_2d(
@@ -75,11 +75,14 @@ def project_3d_to_2d(
     if pad_factor < 1.0:
         raise ValueError("pad_factor must be >= 1.0")
 
-    # Apply edge padding to the nearest integer matching the desired pad_factor
+    # Subtract the edge value so the padded region continues smoothly from zero
+    edge_value = compute_cube_face_averages(volume, n=4)  # NOTE: 4 is arbitrary
+    volume = volume - edge_value
+
+    # Apply zero padding to the nearest integer matching the desired pad_factor
     if pad_factor > 1.0:
         p = int((w * (pad_factor - 1.0)) // 2)
-        edge_value = compute_cube_face_averages(volume, n=4)  # 4 is arbitrary
-        volume = F.pad(volume, pad=[p] * 6, mode="constant", value=edge_value)
+        volume = F.pad(volume, pad=[p] * 6, mode="constant", value=0.0)
 
     volume_shape = tuple(volume.shape[-3:])
 
@@ -141,7 +144,10 @@ def project_3d_to_2d(
 
     # unpad
     if pad_factor > 1.0:
-        projections = F.pad(projections, pad=[-p] * 4)
+        projections = F.pad(projections, pad=[-p] * 4, mode="constant", value=0.0)
+
+    # add the edge value back, scaled to the unpadded box size
+    projections = projections + edge_value * d
 
     return projections
 
@@ -207,9 +213,13 @@ def project_3d_to_2d_multichannel(
     if pad_factor < 1.0:
         raise ValueError("pad_factor must be >= 1.0")
 
+    # Subtract the (per-channel) edge value so the padded region continues smoothly
+    edge_value = compute_cube_face_averages(volume, n=4)  # (c,)
+    volume = volume - edge_value[..., None, None, None]
+
     if pad_factor > 1.0:
         p = int((volume.shape[-1] * (pad_factor - 1.0)) // 2)
-        volume = F.pad(volume, pad=[p] * 6)
+        volume = F.pad(volume, pad=[p] * 6, mode="constant", value=0.0)
 
     # set the shape as a variable
     volume_shape = tuple(volume.shape[-3:])
@@ -273,7 +283,10 @@ def project_3d_to_2d_multichannel(
 
     # unpad
     if pad_factor > 1.0:
-        projections = F.pad(projections, pad=[-p] * 4)
+        projections = F.pad(projections, pad=[-p] * 4, mode="constant", value=0.0)
+
+    # add the (per-channel) edge value back, scaled to the unpadded box size
+    projections = projections + edge_value[..., None, None] * d
 
     return projections
 
@@ -317,9 +330,13 @@ def project_2d_to_1d(
     if pad_factor < 1.0:
         raise ValueError("pad_factor must be >= 1.0")
 
+    # Subtract the edge value so the padded region continues smoothly from zero
+    edge_value = compute_square_edge_averages(image, n=4)  # NOTE: 4 is arbitrary
+    image = image - edge_value
+
     if pad_factor > 1.0:
         p = int((image.shape[-1] * (pad_factor - 1.0)) // 2)
-        image = F.pad(image, pad=[p] * 4)
+        image = F.pad(image, pad=[p] * 4, mode="constant", value=0.0)
 
     # set the shape as a variable
     image_shape = tuple(image.shape[-2:])
@@ -361,6 +378,9 @@ def project_2d_to_1d(
 
     # unpad
     if pad_factor > 1.0:
-        projections = F.pad(projections, pad=[-p] * 2)
+        projections = F.pad(projections, pad=[-p] * 2, mode="constant", value=0.0)
+
+    # add the edge value back, scaled to the unpadded box size
+    projections = projections + edge_value * w
 
     return projections
