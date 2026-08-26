@@ -4,7 +4,9 @@ from torch_fourier_filter.dose_weight import (
     critical_exposure,
     critical_exposure_bfactor,
     cumulative_dose_filter_3d,
+    dose_weight_frame_chunk,
     dose_weight_movie,
+    dose_weight_normalization_grid,
 )
 
 
@@ -170,6 +172,99 @@ def test_dose_weight_movie():
         assert "B-factor must be positive" in str(
             e
         ), "Wrong error message for B-factor check"
+
+
+def test_dose_weight_frame_chunk_matches_dose_weight_movie():
+    """Streaming per-chunk dose weighting must match the whole-movie reference.
+
+    `dose_weight_normalization_grid` + `dose_weight_frame_chunk` never see
+    more than `chunk_size` frames of movie data at once, unlike
+    `dose_weight_movie`, which requires the full `movie_dft` up front. They
+    should nonetheless be numerically identical.
+    """
+    n_frames = 11
+    image_shape = (16, 16)
+    pixel_size = 1.5
+    pre_exposure = 0.3
+    dose_per_frame = 1.5
+    voltage = 200.0
+    chunk_size = 4
+
+    torch.manual_seed(0)
+    real_frames = torch.rand((n_frames, *image_shape))
+    movie_dft = torch.fft.rfft2(real_frames)
+
+    expected = dose_weight_movie(
+        movie_dft=movie_dft.clone(),
+        image_shape=image_shape,
+        pixel_size=pixel_size,
+        pre_exposure=pre_exposure,
+        dose_per_frame=dose_per_frame,
+        voltage=voltage,
+        crit_exposure_bfactor=-1,
+        rfft=True,
+        fftshift=False,
+        memory_efficient=True,
+        chunk_size=chunk_size,
+    )
+
+    Ne, normalization = dose_weight_normalization_grid(
+        image_shape=image_shape,
+        pixel_size=pixel_size,
+        n_frames=n_frames,
+        pre_exposure=pre_exposure,
+        dose_per_frame=dose_per_frame,
+        voltage=voltage,
+        crit_exposure_bfactor=-1,
+        rfft=True,
+        fftshift=False,
+    )
+
+    actual = torch.zeros_like(movie_dft)
+    for start_idx in range(0, n_frames, chunk_size):
+        end_idx = min(start_idx + chunk_size, n_frames)
+        actual[start_idx:end_idx] = dose_weight_frame_chunk(
+            chunk_dft=movie_dft[start_idx:end_idx],
+            frame_start_idx=start_idx,
+            Ne=Ne,
+            normalization=normalization,
+            pre_exposure=pre_exposure,
+            dose_per_frame=dose_per_frame,
+            voltage=voltage,
+        )
+
+    assert torch.allclose(actual, expected, atol=1e-5)
+
+
+def test_dose_weight_frame_chunk_in_place():
+    n_frames = 5
+    image_shape = (8, 8)
+    pixel_size = 1.0
+
+    torch.manual_seed(1)
+    movie_dft = torch.fft.rfft2(torch.rand((n_frames, *image_shape)))
+    Ne, normalization = dose_weight_normalization_grid(
+        image_shape=image_shape,
+        pixel_size=pixel_size,
+        n_frames=n_frames,
+    )
+
+    out_of_place = dose_weight_frame_chunk(
+        chunk_dft=movie_dft.clone(),
+        frame_start_idx=0,
+        Ne=Ne,
+        normalization=normalization,
+    )
+    chunk = movie_dft.clone()
+    result = dose_weight_frame_chunk(
+        chunk_dft=chunk,
+        frame_start_idx=0,
+        Ne=Ne,
+        normalization=normalization,
+        in_place=True,
+    )
+    assert result is chunk
+    assert torch.allclose(result, out_of_place)
 
 
 def test_cumulative_dose_filter_3d():
