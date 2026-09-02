@@ -3,9 +3,8 @@
 import torch
 from torch_grid_utils import dft_center
 from torch_subpixel_crop import subpixel_crop_2d
-from torch_tilt_series import TiltSeries
-
-from torch_reconstruct_tomogram.io import (
+from torch_tilt_series import (
+    TiltSeries,
     load_tilt_series_images,
     normalize_on_central_crop,
 )

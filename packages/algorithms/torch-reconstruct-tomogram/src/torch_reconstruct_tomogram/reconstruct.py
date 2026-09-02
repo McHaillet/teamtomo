@@ -1,21 +1,27 @@
 """(sub-)tomogram reconstruction in pytorch."""
 
 import einops
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torch_fourier_rescale import fourier_rescale_rfft_2d
 from torch_fourier_slice import insert_central_slices_rfft_3d_multichannel
 from torch_grid_utils import fftfreq_grid
-from torch_tilt_series import TiltSeries
-
-from torch_reconstruct_tomogram.io import (
-    _writable,
+from torch_tilt_series import (
+    TiltSeries,
     load_tilt_series_images,
     normalize_on_central_crop,
 )
+
 from torch_reconstruct_tomogram.projection import _extract_particle_tilt_series
 
 _PAD_FACTOR = 2.0
+
+
+def _writable(data):
+    if isinstance(data, np.ndarray) and not data.flags.writeable:
+        data = data.copy()
+    return data
 
 
 def _reconstruct_subvolume(
