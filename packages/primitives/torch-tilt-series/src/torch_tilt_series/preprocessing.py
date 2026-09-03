@@ -50,7 +50,9 @@ def preprocess_tilt_series_images(
     pad: int
         Pixels of mirror padding added on each side of each image before
         filtering, and the soft edge width of the rectangular mask applied
-        over that padding.
+        over that padding. Mirror-padding requires `pad` to be smaller than
+        each spatial dimension, so it is silently clamped down to fit small
+        images.
     subtract_background: bool
         If True (default), fit-and-subtract a linear background plane per
         image (see `torch_tilt_series.utils.subtract_plane`) before
@@ -69,6 +71,7 @@ def preprocess_tilt_series_images(
         images = subtract_plane(images)
 
     h, w = images.shape[-2:]
+    pad = max(0, min(pad, h - 1, w - 1))
     images_flat, ps = einops.pack([images], "* h w")
 
     padded = F.pad(images_flat, [pad, pad, pad, pad], mode="reflect")

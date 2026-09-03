@@ -10,6 +10,15 @@ def test_preprocess_tilt_series_images_shape_preserved():
     assert result.shape == images.shape
 
 
+def test_preprocess_tilt_series_images_pad_is_clamped_to_image_size():
+    torch.manual_seed(0)
+    images = torch.rand(2, 32, 32) * 10 + 5
+    # pad (128, the default) exceeds the image size -> would crash
+    # torch.nn.functional.pad's reflect mode unless silently clamped
+    result = preprocess_tilt_series_images(images, low=0.05)
+    assert result.shape == images.shape
+
+
 def test_preprocess_tilt_series_images_normalizes_by_default():
     torch.manual_seed(0)
     images = torch.rand(2, 64, 64) * 10 + 5
