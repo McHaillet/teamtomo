@@ -4963,12 +4963,7 @@ test = [
 name = "torch-refine-tilt-axis-angle"
 source = { editable = "packages/algorithms/torch-refine-tilt-axis-angle" }
 dependencies = [
-    { name = "einops" },
     { name = "torch" },
-    { name = "torch-affine-utils" },
-    { name = "torch-cubic-spline-grids" },
-    { name = "torch-fourier-slice" },
-    { name = "torch-grid-utils" },
 ]
 
 [package.dev-dependencies]
@@ -4988,14 +4983,7 @@ test = [
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "einops" },
-    { name = "torch" },
-    { name = "torch-affine-utils", editable = "packages/primitives/torch-affine-utils" },
-    { name = "torch-cubic-spline-grids", editable = "packages/primitives/torch-cubic-spline-grids" },
-    { name = "torch-fourier-slice", editable = "packages/primitives/torch-fourier-slice" },
-    { name = "torch-grid-utils", editable = "packages/primitives/torch-grid-utils" },
-]
+requires-dist = [{ name = "torch" }]
 
 [package.metadata.requires-dev]
 dev = [
