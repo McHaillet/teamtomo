@@ -14,7 +14,7 @@ def preprocess_tilt_series_images(
     low: float = 0.0,
     high: float = 0.5,
     falloff: float = 0.0,
-    pad: int = 128,
+    bandpass_padding: int = 128,
     subtract_background: bool = True,
     normalize: bool = True,
 ) -> torch.Tensor:
@@ -47,12 +47,14 @@ def preprocess_tilt_series_images(
         Width, as a fraction of Nyquist, of the cosine falloff at each
         cutoff. Default 0.0: hard edges, i.e. the filter is binary
         (0.0/1.0) with no soft transition.
-    pad: int
+    bandpass_padding: int
         Pixels of mirror padding added on each side of each image before
         filtering, and the soft edge width of the rectangular mask applied
-        over that padding. Mirror-padding requires `pad` to be smaller than
-        each spatial dimension, so it is silently clamped down to fit small
-        images.
+        over that padding. The padding is only used internally for the
+        bandpass filter step and is cropped back off before returning, so
+        the returned images are not padded. Mirror-padding requires
+        `bandpass_padding` to be smaller than each spatial dimension, so it
+        is silently clamped down to fit small images.
     subtract_background: bool
         If True (default), fit-and-subtract a linear background plane per
         image (see `torch_tilt_series.utils.subtract_plane`) before
@@ -71,7 +73,7 @@ def preprocess_tilt_series_images(
         images = subtract_plane(images)
 
     h, w = images.shape[-2:]
-    pad = max(0, min(pad, h - 1, w - 1))
+    pad = max(0, min(bandpass_padding, h - 1, w - 1))
     images_flat, ps = einops.pack([images], "* h w")
 
     padded = F.pad(images_flat, [pad, pad, pad, pad], mode="reflect")
