@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import cast
-
 import numpy as np
 import torch
 
@@ -55,34 +53,32 @@ def fourier_rescale_2d(
         if target_shape is not None:
             raise ValueError("Cannot specify both target_spacing and target_shape")
 
-        # Normalize to tuples
-        source_spacing_2d = cast(
-            "tuple[float, float]", normalize_spacing(source_spacing, ndim=2)
-        )
-        target_spacing_2d = cast(
-            "tuple[float, float]", normalize_spacing(target_spacing, ndim=2)
-        )
+        # Normalize to tuples. Unpacking to exactly 2 names (rather than casting)
+        # gives a real runtime check: this raises if normalize_spacing(ndim=2)
+        # ever returns something other than 2 values.
+        source_h, source_w = normalize_spacing(source_spacing, ndim=2)
+        source_spacing_2d: tuple[float, float] = (source_h, source_w)
+        target_h, target_w = normalize_spacing(target_spacing, ndim=2)
+        target_spacing_2d: tuple[float, float] = (target_h, target_w)
 
         # Early return if no change needed
         if np.allclose(source_spacing_2d, target_spacing_2d, atol=1e-8):
             return image, source_spacing_2d
 
         # Calculate target_shape from spacing ratio
-        source_shape = image.shape[-2:]
-        target_shape = cast(
-            "tuple[int, int]",
-            calculate_target_shape_from_spacing(
-                source_shape, source_spacing_2d, target_spacing_2d
-            ),
+        source_h_px, source_w_px = image.shape[-2:]
+        new_h, new_w = calculate_target_shape_from_spacing(
+            (source_h_px, source_w_px), source_spacing_2d, target_spacing_2d
         )
+        target_shape = (new_h, new_w)
 
     # Case 2: Shape-based rescaling
     elif target_shape is not None:
         # Set default source_spacing if not provided
-        source_spacing_2d = cast(
-            "tuple[float, float]",
-            normalize_spacing(1.0 if source_spacing is None else source_spacing, 2),
+        source_h, source_w = normalize_spacing(
+            1.0 if source_spacing is None else source_spacing, 2
         )
+        source_spacing_2d = (source_h, source_w)
 
     # Neither specified
     else:
@@ -94,9 +90,10 @@ def fourier_rescale_2d(
     dft = torch.fft.fftshift(dft, dim=(-2,))
 
     # Fourier pad/crop
+    image_h, image_w = image.shape[-2:]
     dft = fourier_rescale_rfft_2d(
         dft=dft,
-        image_shape=cast("tuple[int, int]", image.shape[-2:]),
+        image_shape=(image_h, image_w),
         target_shape=target_shape,
     )
     new_shape = target_shape
@@ -116,12 +113,10 @@ def fourier_rescale_2d(
     rescaled_image = torch.fft.ifftshift(rescaled_image, dim=(-2, -1))
 
     # Calculate new spacing after rescaling
-    new_spacing = cast(
-        "tuple[float, float]",
-        calculate_new_spacing(
-            source_spacing_2d, cast("tuple[int, int]", image.shape[-2:]), new_shape
-        ),
+    new_spacing_h, new_spacing_w = calculate_new_spacing(
+        source_spacing_2d, (image_h, image_w), new_shape
     )
+    new_spacing: tuple[float, float] = (new_spacing_h, new_spacing_w)
 
     return rescaled_image, new_spacing
 

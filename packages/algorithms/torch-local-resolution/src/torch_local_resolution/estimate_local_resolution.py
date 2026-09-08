@@ -5,8 +5,6 @@ surrogates, applies per-shell bandpasses, and fills per-batch p-value maps via
 :mod:`utils_correlations`.
 """
 
-from typing import cast
-
 import numpy as np
 import torch
 from torch_fourier_filter.bandpass import bandpass_filter_hyptan
@@ -18,11 +16,21 @@ from .input_models import ComputeResolutionInput
 
 def _bandpass_halfmaps(
     fft_pairs: list[
-        tuple[torch.Tensor, torch.Tensor, tuple[int, ...], tuple[int, ...]]
+        tuple[
+            torch.Tensor,
+            torch.Tensor,
+            tuple[int, int] | tuple[int, int, int],
+            tuple[slice, ...],
+        ]
     ],
     bandpass_filter: torch.Tensor,
     b: int,
-) -> tuple[torch.Tensor, torch.Tensor, tuple[int, ...], tuple[int, ...]]:
+) -> tuple[
+    torch.Tensor,
+    torch.Tensor,
+    tuple[int, int] | tuple[int, int, int],
+    tuple[slice, ...],
+]:
     """Apply bandpass and invert both half-maps for a single batch element."""
     fft1, fft2, padded_image_shape_b, fft_crop_b = fft_pairs[b]
 
@@ -45,7 +53,14 @@ def _prepare_fft_pairs(
     n_random_maps: int = 0,
     do_phase_permutation: bool = False,
 ) -> tuple[
-    list[tuple[torch.Tensor, torch.Tensor, tuple[int, ...], tuple[int, ...]]],
+    list[
+        tuple[
+            torch.Tensor,
+            torch.Tensor,
+            tuple[int, int] | tuple[int, int, int],
+            tuple[slice, ...],
+        ]
+    ],
     list[list[torch.Tensor]],
 ]:
     """Compute per-batch FFT pairs and, optionally, permutation surrogates."""
@@ -110,7 +125,7 @@ def _prepare_device_and_geometry(
     int,
 ]:
     """Move half-maps to device and compute shared shell / output grid geometry."""
-    device: torch.device = cast("torch.device", inp.device)
+    device: torch.device = inp.device
     batch_half_map1 = inp.batch_half_map1.to(device, non_blocking=device.type == "cuda")
     batch_half_map2 = inp.batch_half_map2.to(device, non_blocking=device.type == "cuda")
 
@@ -208,9 +223,7 @@ def compute_correlation(inp: ComputeResolutionInput) -> torch.Tensor:
             low=low_cpp,
             high=high_cpp,
             falloff=inp.falloff,
-            image_shape=cast(
-                "tuple[int, int] | tuple[int, int, int]", padded_image_shape
-            ),
+            image_shape=padded_image_shape,
             rfft=True,
             fftshift=False,
             device=device,
@@ -312,9 +325,7 @@ def compute_resolution(inp: ComputeResolutionInput) -> torch.Tensor:
             low=low_cpp,
             high=high_cpp,
             falloff=inp.falloff,
-            image_shape=cast(
-                "tuple[int, int] | tuple[int, int, int]", padded_image_shape
-            ),
+            image_shape=padded_image_shape,
             rfft=True,
             fftshift=False,
             device=device,

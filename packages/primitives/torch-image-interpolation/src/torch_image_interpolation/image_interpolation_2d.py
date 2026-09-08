@@ -53,7 +53,6 @@ def sample_image_2d(
     # shape (..., 2) -> (n, 2)
     coordinates, ps = einops.pack([coordinates], pattern="* yx")
     n_samples = coordinates.shape[0]
-    _h, _w = image.shape[-2:]
 
     # handle complex input
     if input_image_is_complex:

@@ -73,7 +73,7 @@ def crop_or_pad_to_shape(
 
     # --- crop ---
     slices: list[slice] = [slice(None)] * (volume.ndim - 3)
-    for current, target in zip(volume.shape[-3:], target_shape, strict=False):
+    for current, target in zip(volume.shape[-3:], target_shape, strict=True):
         if current > target:
             start = (current - target) // 2
             slices.append(slice(start, start + target))

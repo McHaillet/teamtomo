@@ -419,9 +419,6 @@ class LazyPatchGrid:
         # patch_grid approach. The patch indices have shapes like
         # (gd, 1, 1, pd, 1, 1), (1, gh, 1, 1, ph, 1), etc.
 
-        # Build the indexing arrays properly
-        _gd, _gh, _gw = self.grid_shape
-
         # Handle the complex indexing by creating the right selection
         if isinstance(gd_key, torch.Tensor):
             # Random indexing case
