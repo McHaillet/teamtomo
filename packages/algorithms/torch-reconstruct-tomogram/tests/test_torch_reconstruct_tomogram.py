@@ -141,13 +141,27 @@ def test_project_points_local_shifts_are_angstroms_not_pixels():
 
 
 @pytest.mark.parametrize("device", DEVICES)
-def test_reconstruct_subvolume_normalize_toggle(device, tmp_path):
+def test_reconstruct_subvolume_preprocess_toggle(device, tmp_path):
     tilt_series = make_tilt_series(tmp_path, device)
     point = torch.tensor([0.0, 0.0, 0.0], device=device)
 
-    normalized = reconstruct_subvolume(tilt_series, point, sidelength=8, normalize=True)
-    raw = reconstruct_subvolume(tilt_series, point, sidelength=8, normalize=False)
-    assert not torch.allclose(normalized, raw)
+    preprocessed = reconstruct_subvolume(
+        tilt_series, point, sidelength=8, preprocess=True
+    )
+    raw = reconstruct_subvolume(tilt_series, point, sidelength=8, preprocess=False)
+    assert not torch.allclose(preprocessed, raw)
+
+
+@pytest.mark.parametrize("device", DEVICES)
+def test_reconstruct_subvolume_preprocessing_kwargs_are_forwarded(device, tmp_path):
+    tilt_series = make_tilt_series(tmp_path, device)
+    point = torch.tensor([0.0, 0.0, 0.0], device=device)
+
+    default = reconstruct_subvolume(tilt_series, point, sidelength=8)
+    custom = reconstruct_subvolume(
+        tilt_series, point, sidelength=8, high=0.3, bandpass_padding=4
+    )
+    assert not torch.allclose(default, custom)
 
 
 @pytest.mark.parametrize("device", DEVICES)

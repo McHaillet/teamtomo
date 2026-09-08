@@ -1,21 +1,29 @@
 """(sub-)tomogram reconstruction in pytorch."""
 
+from typing import Any
+
 import einops
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torch_fourier_rescale import fourier_rescale_rfft_2d
 from torch_fourier_slice import insert_central_slices_rfft_3d_multichannel
 from torch_grid_utils import fftfreq_grid
-from torch_tilt_series import TiltSeries
-
-from torch_reconstruct_tomogram.io import (
-    _writable,
+from torch_tilt_series import (
+    TiltSeries,
     load_tilt_series_images,
-    normalize_on_central_crop,
+    preprocess_tilt_series_images,
 )
+
 from torch_reconstruct_tomogram.projection import _extract_particle_tilt_series
 
 _PAD_FACTOR = 2.0
+
+
+def _writable(data):
+    if isinstance(data, np.ndarray) and not data.flags.writeable:
+        data = data.copy()
+    return data
 
 
 def _reconstruct_subvolume(
@@ -113,7 +121,8 @@ def reconstruct_subvolume(
     points_zyx: torch.Tensor,
     sidelength: int,
     output_pixel_spacing: float | None = None,
-    normalize: bool = True,
+    preprocess: bool = True,
+    **preprocessing_kwargs: Any,
 ) -> torch.Tensor:
     """Reconstruct 3D patch(es) at location(s) in the sample.
 
@@ -127,12 +136,19 @@ def reconstruct_subvolume(
       Fourier-rescaled to this pixel size before 3D reconstruction, so local
       (subvolume) and global (tomogram) reconstructions can each target an
       arbitrary output pixel size independent of the raw data's
-    - normalize, if True (default), applies `normalize_on_central_crop` to the
-      loaded images before reconstruction
+    - preprocess, if True (default), applies
+      `torch_tilt_series.preprocess_tilt_series_images` to the loaded images
+      before reconstruction - by default plane subtraction, a DC-excluding
+      bandpass with no low-pass, i.e. up to Nyquist, and central-crop
+      normalization
+    - `**preprocessing_kwargs` are forwarded to `preprocess_tilt_series_images`,
+      overriding any of its defaults (`low`, `high`, `falloff`,
+      `bandpass_padding`, `subtract_background`, `normalize`) - see that
+      function's docstring for details
     """
     images = load_tilt_series_images(tilt_series)
-    if normalize:
-        images = normalize_on_central_crop(images)
+    if preprocess:
+        images = preprocess_tilt_series_images(images, **preprocessing_kwargs)
     return _reconstruct_subvolume(
         tilt_series,
         images,
@@ -162,13 +178,39 @@ def reconstruct_tomogram(
     sidelength: int,
     batch_size: int | None = None,
     output_pixel_spacing: float | None = None,
-    normalize: bool = True,
+    preprocess: bool = True,
     blend_margin: int | None = None,
+    **preprocessing_kwargs: Any,
 ) -> torch.Tensor:
-    """Reconstruct the full tomogram by tiling reconstructed patches in 3D."""
+    """Reconstruct the full tomogram by tiling reconstructed patches in 3D.
+
+    - tilt_series supplies the projection geometry, plus `image_path`/
+      `image_indices` used to load the raw images
+    - volume_shape is the (d, h, w) shape of the output tomogram, in voxels
+    - sidelength is the spacing between patch centers, in voxels; patches
+      are reconstructed on a grid tiling `volume_shape`
+    - batch_size, if set, reconstructs at most this many patches per chunk
+      (to bound memory usage); defaults to reconstructing all patches at once
+    - output_pixel_spacing is the voxel size of the output in Angstroms
+      (defaults to `tilt_series.pixel_spacing`)
+    - preprocess, if True (default), applies
+      `torch_tilt_series.preprocess_tilt_series_images` to the loaded images
+      before reconstruction - by default plane subtraction, a DC-excluding
+      bandpass with no low-pass, i.e. up to Nyquist, and central-crop
+      normalization
+    - blend_margin is the extra margin, in voxels, added around each patch
+      (total reconstructed patch size is `sidelength + 2 * blend_margin`);
+      overlapping patches are cosine-tapered and blended together over this
+      margin to avoid seams at patch boundaries. Defaults to
+      `sidelength // 4`
+    - `**preprocessing_kwargs` are forwarded to `preprocess_tilt_series_images`,
+      overriding any of its defaults (`low`, `high`, `falloff`,
+      `bandpass_padding`, `subtract_background`, `normalize`) - see that
+      function's docstring for details
+    """
     images = load_tilt_series_images(tilt_series)
-    if normalize:
-        images = normalize_on_central_crop(images)
+    if preprocess:
+        images = preprocess_tilt_series_images(images, **preprocessing_kwargs)
 
     pixel_spacing = tilt_series.pixel_spacing  # raises if unset
     if output_pixel_spacing is None:
