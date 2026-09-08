@@ -88,7 +88,7 @@ def _extract_patches_batched(
     decenter: bool = False,
 ) -> torch.Tensor:  # (n, batch, ph, pw)
     batch, h, w = images.shape
-    _n_pos, batch_check, _ = positions.shape
+    _, batch_check, _ = positions.shape
     if batch != batch_check:
         raise ValueError("Mismatch in batch size for images and positions.")
 
