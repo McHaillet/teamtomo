@@ -104,8 +104,7 @@ def fourier_rescale_3d(
     dft = torch.fft.ifftshift(dft, dim=(-3, -2))
     if preserve_mean:
         # we changed the number of elements in the FT so set norm='forward' to
-        # deactivate
-        # default fft normalization by 1/n and normalise by the correct factor
+        # deactivate default fft normalization by 1/n and normalize by correct factor
         rescaled_image = torch.fft.irfftn(
             dft, dim=(-3, -2, -1), s=new_shape, norm="forward"
         )
