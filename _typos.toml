@@ -6,3 +6,10 @@ iz = "iz"
 # Element symbols in peng1996_element_params.json that collide with real words.
 Ba = "Ba"
 Nd = "Nd"
+
+# Amino acid three-letter codes that collide with real words.
+SER = "SER"
+THR = "THR"
+
+# Bonded-environment labels in elastic_scattering_bonding_*.json, e.g. "C(NOO)".
+NOO = "NOO"

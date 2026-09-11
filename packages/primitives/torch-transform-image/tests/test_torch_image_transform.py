@@ -191,4 +191,3 @@ def test_rotate_then_shift_image_3d_cuda_device():
     assert result.device.type == "cuda"
     assert result.shape == image.shape
     assert torch.isfinite(result).all()
-
