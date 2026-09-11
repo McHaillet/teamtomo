@@ -7,6 +7,11 @@ except ImportError:
     torch_affine_utils = None  # type: ignore[assignment]
 
 try:
+    import torch_calculate_electrostatic_potential
+except ImportError:
+    torch_calculate_electrostatic_potential = None  # type: ignore[assignment]
+
+try:
     import torch_ctf
 except ImportError:
     torch_ctf = None  # type: ignore[assignment]
@@ -72,6 +77,11 @@ except ImportError:
     torch_subpixel_crop = None  # type: ignore[assignment]
 
 try:
+    import torch_structure_manipulation
+except ImportError:
+    torch_structure_manipulation = None  # type: ignore[assignment]
+
+try:
     import torch_transform_image
 except ImportError:
     torch_transform_image = None  # type: ignore[assignment]
@@ -83,6 +93,7 @@ except ImportError:
 
 __all__ = [
     "torch_affine_utils",
+    "torch_calculate_electrostatic_potential",
     "torch_ctf",
     "torch_cubic_spline_grids",
     "torch_find_peaks",
@@ -95,6 +106,7 @@ __all__ = [
     "torch_image_interpolation",
     "torch_scattering",
     "torch_so3",
+    "torch_structure_manipulation",
     "torch_subpixel_crop",
     "torch_tilt_series",
     "torch_transform_image",

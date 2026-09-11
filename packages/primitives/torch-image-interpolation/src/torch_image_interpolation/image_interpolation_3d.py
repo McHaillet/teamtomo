@@ -1,4 +1,4 @@
-"""Sample from and insert into 3D images at arbitrary coordinates."""
+"""3D image sampling and insertion helpers."""
 
 from typing import Literal
 
@@ -24,7 +24,8 @@ def sample_image_3d(
         `(d, h, w)` image or `(c, d, h, w)` multichannel image.
     coordinates: torch.Tensor
         `(..., 3)` array of coordinates at which `image` should be sampled.
-        - Coordinates are ordered `zyx`, positions in the `d`, `h`, `w` dimensions.
+        - Coordinates are ordered `zyx` and are positions in the `d`, `h` and
+          `w` dimensions respectively.
         - Coordinates span the range `[0, N-1]` for a dimension of length N.
     interpolation: Literal['nearest', 'trilinear']
         Interpolation mode for image sampling.
@@ -52,7 +53,6 @@ def sample_image_3d(
     # setup coordinates for sampling image with torch.nn.functional.grid_sample
     # shape (..., 3) -> (b, 3)
     coordinates, ps = einops.pack([coordinates], pattern="* zyx")
-    n_samples = coordinates.shape[0]
 
     # handle complex input
     if input_image_is_complex:
@@ -62,21 +62,23 @@ def sample_image_3d(
         image = torch.view_as_real(image)
         image = einops.rearrange(image, "c d h w complex -> (complex c) d h w")
 
-    # torch.nn.functional.grid_sample is set up for sampling grids
-    # here we view our volume as a batch of n_samples multi-channel volumes
-    # then sample a batch of (1x1x1) grids
-    # this enables sampling arbitrarily shaped arrays of coords
-    image = einops.repeat(image, "c d h w -> b c d h w", b=n_samples)
-    coordinates = einops.rearrange(coordinates, "b zyx -> b 1 1 1 zyx")  # b d h w zyx
+    # Sample all points against one volume copy (W = n_samples). Repeating the
+    # volume per sample OOMs on dense grids (e.g. full-volume affines).
+    volume_shape = torch.as_tensor(image.shape[-3:], device=device)
+    image = einops.rearrange(image, "c d h w -> 1 c d h w")
+    coordinates_grid = einops.rearrange(coordinates, "b zyx -> 1 1 1 b zyx")
 
     # take the samples
-    # grid_sample has no "trilinear" mode; "bilinear" performs trilinear sampling
-    # when the input is volumetric, so it's used to implement our "trilinear" option
-    grid_sample_mode = "bilinear" if interpolation == "trilinear" else interpolation
+    # grid_sample uses 'bilinear' for trilinear volumetric interpolation
+    grid_mode: Literal["nearest", "bilinear"] = (
+        "bilinear" if interpolation == "trilinear" else interpolation
+    )
     samples = F.grid_sample(
         input=image,
-        grid=array_to_grid_sample(coordinates, array_shape=image.shape[-3:]),
-        mode=grid_sample_mode,
+        grid=array_to_grid_sample(
+            coordinates_grid, array_shape=tuple(volume_shape.tolist())
+        ),
+        mode=grid_mode,
         padding_mode="border",  # this increases sampling fidelity at edges
         align_corners=True,
     )
@@ -84,17 +86,15 @@ def sample_image_3d(
     # reconstruct complex valued samples if required
     if input_image_is_complex is True:
         samples = einops.rearrange(
-            samples, "b (complex c) 1 1 1 -> b c complex", complex=2
+            samples, "1 (complex c) 1 1 b -> b c complex", complex=2
         )
         samples = utils.view_as_complex(samples.contiguous())  # (b, c)
     else:
-        samples = einops.rearrange(samples, "b c 1 1 1 -> b c")
+        samples = einops.rearrange(samples, "1 c 1 1 b -> b c")
 
     # set samples from outside of volume to zero
-    coordinates = einops.rearrange(coordinates, "b 1 1 1 zyx -> b zyx")
-    volume_shape = torch.as_tensor(image.shape[-3:]).to(device)
     inside = torch.logical_and(coordinates >= 0, coordinates <= volume_shape - 1)
-    inside = torch.all(inside, dim=-1)  # (b, d, h, w)
+    inside = torch.all(inside, dim=-1)  # (b,)
     samples[~inside] *= 0
 
     # pack samples back into the expected shape
@@ -125,7 +125,8 @@ def insert_into_image_3d(
         `(...)` or `(..., c)` array of values to be inserted into `image`.
     coordinates: torch.Tensor
         `(..., 3)` array of 3D coordinates for each value in `data`.
-        - Coordinates are ordered `zyx`, positions in the `d`, `h`, `w` dimensions.
+        - Coordinates are ordered `zyx` and are positions in the `d`, `h` and
+          `w` dimensions respectively.
         - Coordinates span the range `[0, N-1]` for a dimension of length N.
     image: torch.Tensor
         `(d, h, w)` or `(c, d, h, w)` array containing the image into which

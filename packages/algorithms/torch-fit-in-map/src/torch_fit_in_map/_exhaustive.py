@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import heapq
 import math
+from concurrent.futures import ThreadPoolExecutor
+from typing import cast
 
 import torch
 from torch_affine_utils import homogenise_coordinates
@@ -19,9 +21,7 @@ from ._result import AlignmentResult
 
 
 def _parse_symmetry(sym: str) -> tuple[str, int]:
-    """Parse a point-group string into ``(group, order)``.
-
-    Accepts strings like ``"C4"``, ``"D2"``, ``"T"``.
+    """Parse a point-group string into a ``(group, order)`` pair.
 
     Raises ``ValueError`` for unrecognised strings.
     """
@@ -96,7 +96,8 @@ def _batch_rotate_volume(
     coords = torch.einsum("bij,jk->bik", centred_matrices, coord_grid_flat.T)
     coords = coords[:, :3, :].permute(0, 2, 1)  # (B, d*h*w, 3) zyx
     coords = coords.view(centred_matrices.shape[0], d, h, w, 3)  # (B, d, h, w, 3)
-    return sample_image_3d(volume, coords, interpolation="trilinear")  # (B, d, h, w)
+    rotated = sample_image_3d(volume, coords, interpolation="trilinear")
+    return cast("torch.Tensor", rotated)  # (B, d, h, w)
 
 
 def _argmax_to_shift(
@@ -155,14 +156,12 @@ def _exhaustive_topk(
     M_rot_all = R_4x4_all.clone()
     M_rot_all[:, :3, 3] = t_centred_all
 
-    from concurrent.futures import ThreadPoolExecutor
-
     def _worker(
         device_str: str,
         M_rot_chunk: torch.Tensor,
         R3_chunk: torch.Tensor,
-        pbar_shared=None,
-    ):
+        pbar_shared: tqdm | None = None,
+    ) -> list[tuple[float, int, torch.Tensor, torch.Tensor]]:
         dev = torch.device(device_str)
         ref_norm_dev = _normalise_volume(reference.float(), mask).to(dev)
         mob_norm_dev = _normalise_volume(mobile.float(), mask).to(dev)
@@ -308,12 +307,12 @@ def exhaustive_search(
         Optional ``(d, h, w)`` soft mask in ``[0, 1]`` applied to both
         volumes before scoring.
     verbose : bool
-        Whether to print progress during the search.
+        Show search progress.
 
     Returns
     -------
     AlignmentResult
-        Best rotation matrix (3x3, zyx), translation in pixels (3,), and NCC
+        Best rotation matrix (3 x 3, zyx), translation in pixels (3,), and NCC
         peak score.
     """
     if config is None:

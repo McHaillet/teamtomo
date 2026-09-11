@@ -1,4 +1,4 @@
-"""Sample from and insert into 2D images at arbitrary coordinates."""
+"""2D image sampling and insertion helpers."""
 
 from typing import Literal
 
@@ -24,7 +24,8 @@ def sample_image_2d(
         `(h, w)` image or `(c, h, w)` multichannel image.
     coordinates: torch.Tensor
         `(..., 2)` array of coordinates at which `image` should be sampled.
-        - Coordinates are ordered `yx`, positions in the `h` and `w` dimensions.
+        - Coordinates are ordered `yx` and are positions in the `h` and `w`
+          dimensions respectively.
         - Coordinates span the range `[0, N-1]` for a dimension of length N.
     interpolation: Literal['nearest', 'bilinear', 'bicubic']
         Interpolation mode for image sampling.
@@ -52,7 +53,6 @@ def sample_image_2d(
     # set up for sampling with torch.nn.functional.grid_sample
     # shape (..., 2) -> (n, 2)
     coordinates, ps = einops.pack([coordinates], pattern="* yx")
-    n_samples = coordinates.shape[0]
 
     # handle complex input
     if input_image_is_complex:
@@ -62,17 +62,17 @@ def sample_image_2d(
         image = torch.view_as_real(image)
         image = einops.rearrange(image, "c h w complex -> (complex c) h w")
 
-    # torch.nn.functional.grid_sample is set up for sampling grids
-    # here we view our image as a batch of n_samples multi-channel images
-    # then sample a batch of (1x1) grids
-    # this enables sampling arbitrarily shaped arrays of coords
-    image = einops.repeat(image, "c h w -> b c h w", b=n_samples)
-    coordinates = einops.rearrange(coordinates, "b yx -> b 1 1 yx")  # b h w yx
+    # Sample all points against one image copy (W = n_samples).
+    image_shape = torch.as_tensor(image.shape[-2:], device=device)
+    image = einops.rearrange(image, "c h w -> 1 c h w")
+    coordinates_grid = einops.rearrange(coordinates, "b yx -> 1 1 b yx")
 
     # take the samples
     samples = F.grid_sample(
         input=image,
-        grid=array_to_grid_sample(coordinates, array_shape=image.shape[-2:]),
+        grid=array_to_grid_sample(
+            coordinates_grid, array_shape=tuple(image_shape.tolist())
+        ),
         mode=interpolation,
         padding_mode="border",  # this increases sampling fidelity at edges
         align_corners=True,
@@ -81,15 +81,13 @@ def sample_image_2d(
     # reconstruct complex valued samples if required
     if input_image_is_complex is True:
         samples = einops.rearrange(
-            samples, "b (complex c) 1 1 -> b c complex", complex=2
+            samples, "1 (complex c) 1 b -> b c complex", complex=2
         )
         samples = utils.view_as_complex(samples.contiguous())  # (b, c)
     else:
-        samples = einops.rearrange(samples, "b c 1 1 -> b c")
+        samples = einops.rearrange(samples, "1 c 1 b -> b c")
 
     # set samples from outside of image to zero explicitly
-    coordinates = einops.rearrange(coordinates, "b 1 1 yx -> b yx")
-    image_shape = torch.as_tensor(image.shape[-2:]).to(device)
     inside = torch.logical_and(coordinates >= 0, coordinates <= image_shape - 1)
     inside = torch.all(inside, dim=-1)  # (b,)
     samples[~inside] *= 0
@@ -122,11 +120,12 @@ def insert_into_image_2d(
         `(...)` or `(..., c)` array of values to be inserted into `image`.
     coordinates: torch.Tensor
         `(..., 2)` array of 2D coordinates for each value in `data`.
-        - Coordinates are ordered `yx`, positions in the `h` and `w` dimensions.
+        - Coordinates are ordered `yx` and are positions in the `h` and `w`
+          dimensions respectively.
         - Coordinates span the range `[0, N-1]` for a dimension of length N.
     image: torch.Tensor
-        `(h, w)` or `(c, h, w)` array containing the image into which data
-        will be inserted.
+        `(h, w)` or `(c, h, w)` array containing the image into which data will
+        be inserted.
     weights: torch.Tensor | None
         `(h, w)` array containing weights associated with each pixel in `image`.
         This is useful for tracking weights across multiple calls to this function.

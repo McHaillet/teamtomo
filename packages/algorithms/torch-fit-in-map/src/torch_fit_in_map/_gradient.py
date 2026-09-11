@@ -20,7 +20,7 @@ from ._result import AlignmentResult
 def _axis_angle_to_rotation_matrix_xyz(v: torch.Tensor) -> torch.Tensor:
     """Rodrigues formula.  v: ``(3,)`` axis-angle vector in xyz (radians).
 
-    Numerically stable: when ``|v| → 0`` the result approaches the identity.
+    Numerically stable: when ``|v| -> 0`` the result approaches the identity.
     """
     theta = v.norm(p=2).clamp(min=1e-7)
     k = v / theta  # unit axis
@@ -37,7 +37,7 @@ def _axis_angle_to_rotation_matrix_xyz(v: torch.Tensor) -> torch.Tensor:
 
 
 def _rotation_matrix_xyz_to_axis_angle(R: torch.Tensor) -> torch.Tensor:
-    """Inverse Rodrigues.  R: ``(3, 3)`` xyz rotation → ``(3,)`` axis-angle."""
+    """Inverse Rodrigues.  R: ``(3, 3)`` xyz rotation -> ``(3,)`` axis-angle."""
     trace = R[0, 0] + R[1, 1] + R[2, 2]
     cos_theta = ((trace - 1.0) / 2.0).clamp(-1.0 + 1e-7, 1.0 - 1e-7)
     theta = torch.acos(cos_theta)
@@ -50,7 +50,7 @@ def _rotation_matrix_xyz_to_axis_angle(R: torch.Tensor) -> torch.Tensor:
 
 
 def _flip_3x3(M: torch.Tensor) -> torch.Tensor:
-    """Convert between xyz and zyx 3x3 rotation matrices by flipping."""
+    """Convert between xyz and zyx 3 x 3 rotation matrices by flipping."""
     return torch.flip(M, dims=(-2, -1))
 
 
@@ -104,7 +104,10 @@ def _transform_volume(
     rotated = torch.einsum("ij,...j->...i", R_zyx, p_minus_t_minus_c)  # (d, h, w, 3)
     input_coords = rotated + centre_zyx  # (d, h, w, 3), differentiable
 
-    return sample_image_3d(volume, input_coords, interpolation="trilinear")
+    transformed: torch.Tensor = sample_image_3d(
+        volume, input_coords, interpolation="trilinear"
+    )
+    return transformed
 
 
 # ---------------------------------------------------------------------------
@@ -176,12 +179,12 @@ def gradient_refine(
     mask : torch.Tensor or None
         Optional ``(d, h, w)`` soft mask.
     verbose : bool
-        Whether to print progress during optimisation.
+        Show refinement progress.
 
     Returns
     -------
     AlignmentResult
-        Refined rotation matrix (3x3, zyx), translation in pixels (3,), and
+        Refined rotation matrix (3 x 3, zyx), translation in pixels (3,), and
         final NCC score.
     """
     if config is None:
@@ -218,8 +221,7 @@ def gradient_refine(
             line_search_fn="strong_wolfe",
         )
     else:
-        # Adam default lr is usually 1e-2; if user kept 1.0 (LBFGS default), it
-        # might be too high
+        # Adam's usual learning rate is 1e-2; the LBFGS default may be too high.
         lr = config.learning_rate
         if config.learning_rate == 1.0 and config.optimizer == "adam":
             lr = 1e-2
@@ -241,7 +243,7 @@ def gradient_refine(
         transformed = _transform_volume(mob_norm, R_xyz, t_param, centre)
         loss = loss_fn(ref_norm, transformed, mask)
         if loss.requires_grad:
-            loss.backward()
+            loss.backward()  # type: ignore[no-untyped-call]
         # L-BFGS may call closure multiple times per iteration (line search)
         # but we use it as a heartbeat
         if config.optimizer == "adam":
@@ -253,11 +255,11 @@ def gradient_refine(
 
     if config.optimizer == "lbfgs":
         # L-BFGS runs all iterations inside one .step(closure)
-        optimizer.step(closure)
+        optimizer.step(closure)  # type: ignore[no-untyped-call]
     else:
         # Adam runs explicitly in a loop
         for _ in range(config.n_iterations):
-            optimizer.step(closure)
+            optimizer.step(closure)  # type: ignore[no-untyped-call]
             pbar.update(1)
 
     pbar.close()

@@ -1,3 +1,5 @@
+"""Real-space affine transforms for 3D images."""
+
 from typing import Literal, Optional
 
 import einops
@@ -192,18 +194,21 @@ def _build_rotate_shift_matrix_3d(
         e = f"3 shifts (zyx) are required but {num_shifts} were supplied: {shift_zyx}."
         raise ValueError(e)
 
+    device = image_center.device
     rotation_matrix = (
-        Rx(rotate_zyx[2], zyx=True)
-        @ Ry(rotate_zyx[1], zyx=True)
-        @ Rz(rotate_zyx[0], zyx=True)
+        Rx(rotate_zyx[2], zyx=True, device=device)
+        @ Ry(rotate_zyx[1], zyx=True, device=device)
+        @ Rz(rotate_zyx[0], zyx=True, device=device)
     )
-    translation_matrix = T(shift_zyx)
+    translation_matrix = T(shift_zyx, device=device)
 
     if rotate_first:
         inner_matrix = translation_matrix @ rotation_matrix
     else:
         inner_matrix = rotation_matrix @ translation_matrix
-    matrix = T(image_center) @ inner_matrix @ T(-image_center)
+    matrix = (
+        T(image_center, device=device) @ inner_matrix @ T(-image_center, device=device)
+    )
     # Matrix is inverted because it is applied to the coordinate grid,
     # not the image directly.
     return torch.inverse(matrix)

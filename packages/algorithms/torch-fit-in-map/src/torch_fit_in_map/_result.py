@@ -28,9 +28,9 @@ class AlignmentResult:
     score : float
         Peak normalised cross-correlation score (higher is better, max 1.0 for
         identical volumes).
-    simulated_volume : torch.Tensor or None
-        ``(d, h, w)`` simulated density volume generated during
-        ``fit_map_in_pdb`` / ``fit_pdb_in_map``; ``None`` unless
+    simulated_potential : torch.Tensor or None
+        ``(d, h, w)`` simulated potential volume generated during
+        ``fit_map_in_structure`` / ``fit_structure_in_map``; ``None`` unless
         ``save_simulated=True`` was set.
     translation_angstroms : torch.Tensor or None
         ``(3,)`` translation in Angstroms.  Populated only when
@@ -40,5 +40,5 @@ class AlignmentResult:
     rotation_matrix: torch.Tensor
     translation_pixels: torch.Tensor
     score: float
-    simulated_volume: torch.Tensor | None = field(default=None, repr=False)
+    simulated_potential: torch.Tensor | None = field(default=None, repr=False)
     translation_angstroms: torch.Tensor | None = field(default=None, repr=False)
