@@ -18,9 +18,21 @@ import shutil
 import urllib.request
 from typing import TYPE_CHECKING
 
+import mmdf
+import mrcfile  # type: ignore[import]
 import numpy as np
 import pytest
 import torch
+
+from torch_fit_in_map import (
+    AlignmentResult,
+    ExhaustiveSearchConfig,
+    GradientRefinementConfig,
+    apply_alignment,
+    crop_or_pad_to_shape,
+    fit_map_in_map,
+    fit_structure_in_map,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -41,8 +53,6 @@ _MAX_BOX = 64
 
 
 def _load_mrc(path: Path) -> tuple[torch.Tensor, float]:
-    import mrcfile  # type: ignore[import]
-
     with mrcfile.open(str(path), mode="r") as mrc:
         data = torch.from_numpy(mrc.data.copy()).float()
         px = float(mrc.voxel_size.x) or 1.0
@@ -158,15 +168,6 @@ def _run_map_alignment_recovery(
     Under the pull convention ``apply_alignment(ref, (R_p, t_p))`` produces
     a mobile whose true inverse is R_p^T / -R_p@t_p.
     """
-    from torch_fit_in_map import (
-        AlignmentResult,
-        ExhaustiveSearchConfig,
-        GradientRefinementConfig,
-        apply_alignment,
-        crop_or_pad_to_shape,
-        fit_map_in_map,
-    )
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ref, pixel_size = _load_mrc(emdb_map)
 
@@ -263,16 +264,6 @@ def test_structure_in_map_recovery(pdb_8yrq):
     (not the mobile), the expected result is the forward transform
     (R_perturb, t_perturb), not its inverse.
     """
-    import mmdf
-
-    from torch_fit_in_map import (
-        AlignmentResult,
-        ExhaustiveSearchConfig,
-        GradientRefinementConfig,
-        apply_alignment,
-        fit_structure_in_map,
-    )
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     sim = _GaussianCaSimulator()

@@ -10,10 +10,10 @@ from torch_calculate_electrostatic_potential import (
     default_sublattice_radius,
     potential_from_structure_3d,
 )
-from torch_structure_manipulation import AtomicStructure
+from torch_structure_manipulation import AtomicStructure, center_structure_from_coords
 
 from ._config import PotentialSimulatorConfig
-from ._geometry import center_positions_in_simulation_box, simulation_box_center_zyx
+from ._geometry import simulation_box_center_angstroms, simulation_box_center_zyx
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -137,8 +137,9 @@ class _ESPSimulator:
         else:
             structure = AtomicStructure.from_dataframe(atoms, device=device)
 
-        centered_positions = center_positions_in_simulation_box(
-            structure.positions_zyx, box_size, pixel_size
+        box_center = simulation_box_center_angstroms(box_size, pixel_size)
+        centered_positions = center_structure_from_coords(
+            structure.positions_zyx, center_point=(box_center, box_center, box_center)
         )
         structure = structure.with_positions(centered_positions)
 

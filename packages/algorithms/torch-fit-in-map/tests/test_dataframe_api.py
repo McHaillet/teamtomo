@@ -9,7 +9,7 @@ from torch_calculate_electrostatic_potential import (
     default_sublattice_radius,
     potential_from_structure_3d,
 )
-from torch_structure_manipulation import AtomicStructure
+from torch_structure_manipulation import AtomicStructure, center_structure_from_coords
 
 from torch_fit_in_map import (
     AlignmentResult,
@@ -166,9 +166,12 @@ def test_default_workspace_simulator_produces_zyx_volume_and_fits():
     assert volume.abs().sum() > 0
 
     structure = AtomicStructure.from_dataframe(atoms, device=volume.device)
-    center_zyx = torch.full((3,), (box - 1) / 2 * pixel_size, device=volume.device)
+    center = (box - 1) / 2 * pixel_size
+    center_zyx = torch.full((3,), center, device=volume.device)
     structure = structure.with_positions(
-        structure.positions_zyx - structure.positions_zyx.mean(0) + center_zyx
+        center_structure_from_coords(
+            structure.positions_zyx, center_point=(center, center, center)
+        )
     )
     grid = GridConfig.from_grid_shape_and_voxel_size(
         (box, box, box),
