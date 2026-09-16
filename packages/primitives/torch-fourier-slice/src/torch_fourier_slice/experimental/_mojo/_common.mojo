@@ -6,7 +6,10 @@ width. `bv` is the batch of volumes, `bp` the batch of projections.
 """
 
 from std.atomic import Atomic, Ordering
+from std.gpu import WARP_SIZE, lane_id
+from std.gpu.primitives.warp import shuffle_idx, sum as _warp_sum
 from std.python import PythonObject
+from std.sys import is_amd_gpu, is_apple_gpu, is_nvidia_gpu
 
 from layout import Coord, TensorLayout, TileTensor
 
@@ -30,6 +33,38 @@ comptime PI: Float32 = 3.14159265358979323846
 # code is read once at the entry-point boundary to pick the specialisation.
 comptime LINEAR = 0
 comptime CUBIC = 1
+
+# The scatter (insertion) kernels are atomic-bound rather than compute-bound: each
+# thread issues one contended atomic add per splat corner per pixel (2x{re, im}, +1
+# for weights), so hiding that latency by giving a thread more independent atomics
+# in flight matters more than for the read-only gather kernels -- but only once
+# there's *enough* per-pixel atomic work to amortise the coarsening loop's overhead
+# and the smaller resulting grid (fewer resident blocks across this GPU's few SMs).
+#
+# Measured on an RTX A500 (16 SMs) inserting central slices/lines: tricubic 3D
+# (4x4x4 = 64 corners/pixel) is ~40-50% faster at coarsen=2 (box=256); trilinear 3D
+# (2x2x2 = 8 corners) and bicubic 2D-line (4x4 = 16 corners) are both ~15-50%
+# *slower* at coarsen=2 -- too little work per pixel to amortise against. So only
+# the two 3D kernels (slice + 3D line, both tricubic at CUBIC) coarsen, gated on
+# the comptime `interp` each is already specialised on; the 2D-line kernel always
+# uses `SCATTER_COARSEN_LINEAR` directly (see `_launch_scatter_line2d`). Mirrors the
+# tuning the sibling torch-projectors CUDA backprojection kernel documents for its
+# own coarsening knob.
+comptime SCATTER_BLOCK = 256
+comptime SCATTER_COARSEN_LINEAR = 1
+comptime SCATTER_COARSEN_CUBIC = 2
+
+
+@always_inline
+def _scatter_coarsen[interp: Int]() -> Int:
+    """Per-thread pixel coarsening for a 3D scatter kernel (slice or 3D line).
+
+    Not used by the 2D-line scatter kernel -- see the module comment above.
+    """
+    comptime if interp == CUBIC:
+        return SCATTER_COARSEN_CUBIC
+    else:
+        return SCATTER_COARSEN_LINEAR
 
 
 @always_inline
@@ -362,6 +397,134 @@ def _atomic_add_at[
     that behaviour rather than requiring it.
     """
     _ = Atomic.fetch_add[ordering=Ordering.RELAXED](t.ptr_at_offset(coord), v)
+
+
+# ---------------------------------------------------------------------------
+# Scatter warp reduction -- deliberately NOT implemented (unlike the pose
+# gradients below)
+#
+# Every atomic add above stays a plain per-lane `Atomic.fetch_add`; there is
+# no warp-level reduction on this path, even though nearby splat corners
+# (adjacent pixels' interpolation footprints, and different poses converging
+# near the DC voxels) do genuinely collide. The natural tool is `match_any`
+# (std.gpu.primitives.warp): group a warp's lanes by their computed target
+# address, sum within each group, one atomic per group instead of per lane --
+# exactly the technique its own docstring describes ("a histogram or scatter
+# leader handling a whole group in one non-atomic update instead of one
+# atomic per lane"). It is NOT available in the pinned `mojo==1.0.0b2`
+# compiler (verified directly against the installed compiler -- it exists on
+# `modular/modular`'s `main` branch, which has drifted ahead of this pinned
+# release).
+#
+# The other route to reducing this contention is a genuine block-level
+# (not just warp-level) reduction via shared memory before one atomic per
+# block -- what torch-projectors' own backward CUDA kernel already does for
+# its pose gradients (`__shared__ float local_rot_grad[256][9]`). That needs
+# `barrier()` (CUDA's `__syncthreads()`), which lives in the separate `max`
+# package, not the lightweight `mojo` compiler package this project's `mojo`
+# extra currently depends on -- the same dependency-scope tradeoff noted
+# below for the pose gradients' own block-vs-warp choice.
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Pose-gradient warp reduction
+#
+# Unlike the volume/projection scatter above (whose splat targets are spread
+# across the volume, with contention concentrated only near the DC voxels),
+# every pixel of a pose's gradient kernel targets the SAME ~14-scalar
+# accumulator (grad_rot's 9 elements + grad_shift's 2 + grad_shift_3d's 3) --
+# thousands of pixels per pose, all contending on a handful of floats. Plain
+# per-pixel atomics there measured 3-13x *slower* on GPU than the CPU
+# fallback (RTX A500: up to 1.8s/call vs 0.3s/call for a 256-box, 41-pose
+# backprojection gradient). `_grad_add` reduces across a warp before one
+# atomic add per warp instead, a 32x (WARP_SIZE) cut to the atomic count for
+# every warp that isn't straddling a pose boundary.
+# ---------------------------------------------------------------------------
+
+
+@always_inline
+def _warp_pose_uniform(vp: Int) -> Bool:
+    """True if every lane in this warp shares the same pose index `vp`.
+
+    A kernel's per-pixel index is monotonically non-decreasing across
+    increasing thread index within a warp (consecutive threads take
+    consecutive pixels), so `vp` is too -- comparing the first and last lane's
+    `vp` is sufficient; if they match, every lane in between must as well.
+    Only warps straddling a pose boundary (at most one per pose) see `False`.
+
+    GPU-only (always `True` on CPU, where it's unused); must be called with
+    all `WARP_SIZE` lanes of the warp converged, since it uses `shuffle_idx`.
+    """
+    comptime if is_nvidia_gpu() or is_amd_gpu() or is_apple_gpu():
+        var lo = Int(shuffle_idx(Int32(vp), 0))
+        var hi = Int(shuffle_idx(Int32(vp), UInt32(WARP_SIZE - 1)))
+        return lo == hi
+    else:
+        return True
+
+
+@always_inline
+def _pose_grad_offsets(
+    i_bv: Int, i_bp: Int, p: FourierSliceParams
+) -> Tuple[Int, Int, Int]:
+    """Base offsets into `grad_rot` (9-wide), `grad_shift` (2-wide) and
+    `grad_shift_3d` (3-wide) for this pixel's pose, honouring each buffer's
+    own broadcast batch dim (`bv_rot` / `bv_shift_2d` / `bv_shift_3d`)."""
+    var rb = 0 if p.bv_rot == 1 else i_bv
+    var sb = 0 if p.bv_shift_2d == 1 else i_bv
+    var sb3 = 0 if p.bv_shift_3d == 1 else i_bv
+    return (
+        (rb * p.bp + i_bp) * 9,
+        (sb * p.bp + i_bp) * 2,
+        (sb3 * p.bp + i_bp) * 3,
+    )
+
+
+@always_inline
+def _line_pose_grad_offsets(
+    i_bv: Int, i_bp: Int, p: FourierSliceParams
+) -> Tuple[Int, Int]:
+    """Base offsets into `grad_dir` (3-wide) and `grad_shift_3d` (3-wide) for a
+    3D-line pixel's pose (see `_pose_grad_offsets`)."""
+    var db = 0 if p.bv_rot == 1 else i_bv
+    var sb3 = 0 if p.bv_shift_3d == 1 else i_bv
+    return ((db * p.bp + i_bp) * 3, (sb3 * p.bp + i_bp) * 3)
+
+
+@always_inline
+def _line2d_pose_grad_offsets(
+    i_bv: Int, i_bp: Int, p: FourierSliceParams
+) -> Tuple[Int, Int]:
+    """Base offsets into `grad_dir` (2-wide) and `grad_shift` (2-wide) for a
+    2D-line pixel's pose (see `_pose_grad_offsets`)."""
+    var db = 0 if p.bv_rot == 1 else i_bv
+    var sb = 0 if p.bv_shift_2d == 1 else i_bv
+    return ((db * p.bp + i_bp) * 2, (sb * p.bp + i_bp) * 2)
+
+
+@always_inline
+def _grad_add(ptr: Float32Ptr, offset: Int, v: Float32, warp_uniform: Bool):
+    """Add `v` into `ptr[offset]`, a per-pose pose-gradient accumulator cell.
+
+    On GPU, when every lane of the warp targets the same cell
+    (`warp_uniform`), reduce `v` across the warp first and have a single lane
+    issue one atomic add. Falls back to a plain per-lane atomic add when the
+    warp isn't uniform (a pose-boundary warp) or on CPU (`warp_uniform` is
+    ignored there -- CPU has no warps and its accumulator contention is
+    already negligible, one thread per pose).
+    """
+    comptime if is_nvidia_gpu() or is_amd_gpu() or is_apple_gpu():
+        if warp_uniform:
+            var total = _warp_sum(v)
+            if lane_id() == 0:
+                _ = Atomic.fetch_add[ordering=Ordering.RELAXED](
+                    ptr + offset, total
+                )
+        else:
+            _ = Atomic.fetch_add[ordering=Ordering.RELAXED](ptr + offset, v)
+    else:
+        _ = Atomic.fetch_add[ordering=Ordering.RELAXED](ptr + offset, v)
 
 
 @always_inline
