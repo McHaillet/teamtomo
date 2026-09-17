@@ -499,46 +499,11 @@ def _atomic_add_at[
 
 
 # ---------------------------------------------------------------------------
-# Scatter warp reduction -- deliberately NOT implemented (unlike the pose
-# gradients below)
-#
-# Every atomic add above stays a plain per-lane `Atomic.fetch_add`; there is
-# no warp-level reduction on this path, even though nearby splat corners
-# (adjacent pixels' interpolation footprints, and different poses converging
-# near the DC voxels) do genuinely collide. The natural tool is `match_any`
-# (std.gpu.primitives.warp): group a warp's lanes by their computed target
-# address, sum within each group, one atomic per group instead of per lane --
-# exactly the technique its own docstring describes ("a histogram or scatter
-# leader handling a whole group in one non-atomic update instead of one
-# atomic per lane"). It is NOT available in the pinned `mojo==1.0.0b2`
-# compiler (verified directly against the installed compiler -- it exists on
-# `modular/modular`'s `main` branch, which has drifted ahead of this pinned
-# release).
-#
-# The other route to reducing this contention is a genuine block-level
-# (not just warp-level) reduction via shared memory before one atomic per
-# block -- what torch-projectors' own backward CUDA kernel already does for
-# its pose gradients (`__shared__ float local_rot_grad[256][9]`). That needs
-# `barrier()` (CUDA's `__syncthreads()`), which lives in the separate `max`
-# package, not the lightweight `mojo` compiler package this project's `mojo`
-# extra currently depends on -- the same dependency-scope tradeoff noted
-# below for the pose gradients' own block-vs-warp choice.
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# Pose-gradient warp reduction
-#
-# Unlike the volume/projection scatter above (whose splat targets are spread
-# across the volume, with contention concentrated only near the DC voxels),
-# every pixel of a pose's gradient kernel targets the SAME ~14-scalar
-# accumulator (grad_rot's 9 elements + grad_shift's 2 + grad_shift_3d's 3) --
-# thousands of pixels per pose, all contending on a handful of floats. Plain
-# per-pixel atomics there measured 3-13x *slower* on GPU than the CPU
-# fallback (RTX A500: up to 1.8s/call vs 0.3s/call for a 256-box, 41-pose
-# backprojection gradient). `_grad_add` reduces across a warp before one
-# atomic add per warp instead, a 32x (WARP_SIZE) cut to the atomic count for
-# every warp that isn't straddling a pose boundary.
+# Reduction strategy for the two atomic-contention hot paths below
+# (`_atomic_add_at`'s scatter accumulation, `_grad_add`'s pose gradients):
+# what's shipped, what was tried and reverted (block-level reduction for the
+# pose gradients; `match_any` warp reduction for the scatter atomics), and
+# why -- see `../GPU_REDUCTIONS.md`.
 # ---------------------------------------------------------------------------
 
 
