@@ -58,7 +58,8 @@ repository = "https://github.com/teamtomo/teamtomo"
 
 [project.optional-dependencies]
 mojo = [
-    "mojo==1.0.0b2",
+    "max>=26.5.0",
+    "mojo==1.0.0",
 ]
 
 # https://peps.python.org/pep-0735/

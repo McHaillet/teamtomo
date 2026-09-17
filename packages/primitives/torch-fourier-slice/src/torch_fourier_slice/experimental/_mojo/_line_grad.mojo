@@ -67,20 +67,22 @@ def _line_pose_grad_terms(
     shift_cotangent: C2,
     modulated: C2,
     p: FourierSliceParams,
-) -> SIMD[DType.float32, 6]:
+) -> SIMD[DType.float32, 8]:
     """This line pixel's direction + 3D-shift grad contribution.
 
     Pure -- see `_pose_grad_terms` in `_pose_grad.mojo`. Layout: `[dir(3),
-    shift_3d(3)]`, `dir` matching `grad_dir`'s storage. `k = s_x * u`, so
-    `d(value)/du_a = g_a * s_x`; the direction grad is `(dz, dy, dx) * s_x`
-    with `d_a = Re[cotangent * conj(g_a)]`. The 3D shift term ramps with the
-    rotated coordinate `(kz, ky, kx)`, as in the slice kernel. `shift_3d` is
-    left zero (`p.has_shifts_3d`, uniform across a launch) when not active.
+    shift_3d(3)]` (padded from 6 to the next power of two -- SIMD widths must
+    be one -- lanes 6-7 unused), `dir` matching `grad_dir`'s storage. `k = s_x
+    * u`, so `d(value)/du_a = g_a * s_x`; the direction grad is `(dz, dy, dx)
+    * s_x` with `d_a = Re[cotangent * conj(g_a)]`. The 3D shift term ramps
+    with the rotated coordinate `(kz, ky, kx)`, as in the slice kernel.
+    `shift_3d` is left zero (`p.has_shifts_3d`, uniform across a launch) when
+    not active.
     """
     var dz = _redot(rot_cotangent, gz)
     var dy = _redot(rot_cotangent, gy)
     var dx = _redot(rot_cotangent, gx)
-    var out = SIMD[DType.float32, 6](0)
+    var out = SIMD[DType.float32, 8](0)
     out[0] = dz * sx
     out[1] = dy * sx
     out[2] = dx * sx
@@ -109,13 +111,13 @@ def _forward_line_pose_grad_pixel[
     i_bp: Int,
     x: Int,
     p: FourierSliceParams,
-) -> SIMD[DType.float32, 6]:
+) -> SIMD[DType.float32, 8]:
     """Direction/3D-shift grad contribution for the forward line projection
     (volume = rec). Pure -- see `_line_pose_grad_terms`.
     """
     var coord_x = Float32(x)
     if coord_x * coord_x > p.radius_cutoff_sq:
-        return SIMD[DType.float32, 6](0)
+        return SIMD[DType.float32, 8](0)
     var db = 0 if p.bv_rot == 1 else i_bv
     var sx = coord_x * p.oversampling
     var k = _line_k(direction, (db * p.bp + i_bp) * 3, sx)
@@ -156,13 +158,13 @@ def _backproject_line_pose_grad_pixel[
     i_bp: Int,
     x: Int,
     p: FourierSliceParams,
-) -> SIMD[DType.float32, 6]:
+) -> SIMD[DType.float32, 8]:
     """Direction/3D-shift grad contribution for the line insertion (volume =
     grad_data_rec). Pure -- see `_line_pose_grad_terms`.
     """
     var coord_x = Float32(x)
     if coord_x * coord_x > p.radius_cutoff_sq:
-        return SIMD[DType.float32, 6](0)
+        return SIMD[DType.float32, 8](0)
     var db = 0 if p.bv_rot == 1 else i_bv
     var sx = coord_x * p.oversampling
     var k = _line_k(direction, (db * p.bp + i_bp) * 3, sx)

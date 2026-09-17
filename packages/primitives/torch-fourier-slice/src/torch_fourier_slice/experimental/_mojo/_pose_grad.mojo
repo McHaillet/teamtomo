@@ -9,12 +9,13 @@ scatter / forward-projection adjoints). For one output pixel they compute:
 - (backprojection only) a real weight gradient, the adjoint of the weight splat.
 
 Accumulators are per pose. `_pose_grad_terms` is the pure (no side effects) core:
-it returns one pixel's contribution as a `SIMD[DType.float32, 14]`
-`[rot(9), shift_2d(2), shift_3d(3)]` rather than adding it in directly, so the
-caller (CPU driver or GPU kernel) decides how to accumulate -- every pixel of a
-pose targets the *same* ~14 scalars (unlike the volume/projection scatter, whose
-targets are spread across the volume), which is far more contended and is why
-the GPU kernel reduces across a warp before a single atomic add per warp; see
+it returns one pixel's contribution as a `SIMD[DType.float32, 16]`
+`[rot(9), shift_2d(2), shift_3d(3)]` (padded from 14 to the next power of two --
+SIMD widths must be one -- lanes 14-15 unused) rather than adding it in directly,
+so the caller (CPU driver or GPU kernel) decides how to accumulate -- every pixel
+of a pose targets the *same* ~14 scalars (unlike the volume/projection scatter,
+whose targets are spread across the volume), which is far more contended and is
+why the GPU kernel reduces across a warp before a single atomic add per warp; see
 `_device.mojo`. `Re[a conj(b)]` for complex `(re, im)` pairs is the lane dot
 product `a[0]b[0] + a[1]b[1]`.
 """
@@ -85,7 +86,7 @@ def _pose_grad_terms(
     shift_cotangent: C2,
     modulated: C2,
     p: FourierSliceParams,
-) -> SIMD[DType.float32, 14]:
+) -> SIMD[DType.float32, 16]:
     """This pixel's rotation (3x3) and shift (2D + 3D) gradient contribution.
 
     Pure -- no side effects, no accumulator pointers -- so the caller (CPU
@@ -106,7 +107,7 @@ def _pose_grad_terms(
     var dx = _redot(rot_cotangent, gx)
     var dy = _redot(rot_cotangent, gy)
     var dz = _redot(rot_cotangent, gz)
-    var out = SIMD[DType.float32, 14](0)
+    var out = SIMD[DType.float32, 16](0)
     out[1] = dz * sy
     out[2] = dz * sx
     out[4] = dy * sy
@@ -180,7 +181,7 @@ def _forward_pose_grad_pixel[
     y: Int,
     x: Int,
     p: FourierSliceParams,
-) -> SIMD[DType.float32, 14]:
+) -> SIMD[DType.float32, 16]:
     """Rotation/shift grad contribution for the forward projection (volume = rec).
 
     Pure -- see `_pose_grad_terms`. Zero for a pixel outside the radius cutoff.
@@ -188,7 +189,7 @@ def _forward_pose_grad_pixel[
     var coord_y = _fourier_coord(y, p.proj_sidelength)
     var coord_x = Float32(x)
     if coord_y * coord_y + coord_x * coord_x > p.radius_cutoff_sq:
-        return SIMD[DType.float32, 14](0)
+        return SIMD[DType.float32, 16](0)
     var sx = coord_x * p.oversampling
     var sy = coord_y * p.oversampling
     var sz = _ewald_sz(p, sx, sy)
@@ -256,7 +257,7 @@ def _backproject_pose_grad_pixel[
     y: Int,
     x: Int,
     p: FourierSliceParams,
-) -> SIMD[DType.float32, 14]:
+) -> SIMD[DType.float32, 16]:
     """Rotation/shift grad contribution for the backprojection (volume = grad_data_rec).
 
     Pure -- see `_pose_grad_terms`. Zero outside the radius cutoff or on the
@@ -265,9 +266,9 @@ def _backproject_pose_grad_pixel[
     var coord_y = _fourier_coord(y, p.proj_sidelength)
     var coord_x = Float32(x)
     if coord_y * coord_y + coord_x * coord_x > p.radius_cutoff_sq:
-        return SIMD[DType.float32, 14](0)
+        return SIMD[DType.float32, 16](0)
     if x == 0 and y >= p.proj_sidelength // 2:
-        return SIMD[DType.float32, 14](0)
+        return SIMD[DType.float32, 16](0)
     var sx = coord_x * p.oversampling
     var sy = coord_y * p.oversampling
     var sz = _ewald_sz(p, sx, sy)
