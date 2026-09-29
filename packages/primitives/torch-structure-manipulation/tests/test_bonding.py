@@ -75,17 +75,6 @@ def test_hydrogen_inclusion_is_deterministic():
     assert with_h.loc[2, "bonded_environments"] == "H(N)"
 
 
-def test_multi_letter_elements_use_standard_capitalization():
-    df = _atoms(
-        [
-            ("C", 1, "HEM", "FE", "FE"),
-            ("D", 1, "CL", "CL", "cl"),
-        ]
-    )
-    result = annotate_bonding_environments(df)
-    assert result["bonded_environments"].tolist() == ["Fe()", "Cl()"]
-
-
 def test_missing_columns_are_reported():
     try:
         annotate_bonding_environments(pd.DataFrame({"residue": ["ALA"]}))

@@ -165,15 +165,12 @@ def _environment_for_atom(
         )
 
     # Neighbours ordered by atomic number, matching the packaged Peng tables.
-    bonded_key = "".join(
-        bonded_element.capitalize()
-        for bonded_element in sorted(bonded_elements, key=_atomic_number_order)
-    )
+    bonded_key = "".join(sorted(bonded_elements, key=_atomic_number_order))
     category = _oxygen_carbon_category(
         residue, atom, element, bonded_key, key, residue_lookup, next_residue
     )
     suffix = f", {category}" if category is not None else ""
-    return f"{element.capitalize()}({bonded_key}{suffix})"
+    return f"{element}({bonded_key}{suffix})"
 
 
 def _atomic_number_order(element: str) -> tuple[int, str]:
