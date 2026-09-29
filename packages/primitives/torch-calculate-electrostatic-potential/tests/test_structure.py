@@ -224,6 +224,28 @@ def test_bonding_canonical_keys_match_packaged_parameters():
         assert torch.isfinite(potential).all()
 
 
+def test_bonding_keys_with_hydrogens_match_packaged_parameters():
+    atoms = pd.DataFrame(
+        [
+            ("A", 1, "ALA", "N", "N", 0.0),
+            ("A", 1, "ALA", "CA", "C", 1.0),
+            ("A", 1, "ALA", "C", "C", 2.0),
+            ("A", 1, "ALA", "CB", "C", 3.0),
+        ],
+        columns=["chain", "residue_id", "residue", "atom", "element", "x"],
+    )
+    atoms["y"] = 0.0
+    atoms["z"] = 0.0
+    annotated = annotate_bonding_environments(atoms)  # include_hydrogens=True
+    structure = AtomicStructure.from_dataframe(annotated.iloc[[1]])  # CA
+    potential_from_structure_3d(
+        structure,
+        _grid(3),
+        scattering_factors="peng_bonded",
+        bonded_fallback="error",
+    )
+
+
 def test_structure_2d_projects_z_and_preserves_gradients():
     structure = AtomicStructure.from_dataframe(_frame())
     positions = structure.positions_zyx.clone().requires_grad_(True)
