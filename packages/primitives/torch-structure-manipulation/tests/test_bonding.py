@@ -57,7 +57,7 @@ def test_rna_inter_residue_and_terminal_bonds():
     result = annotate_bonding_environments(df)
     assert result.loc[1, "bonded_environments"] == "O(CP)"
     assert result.loc[2, "bonded_environments"] == "P(OO)"
-    assert result.loc[5, "bonded_environments"] == "O(CH)"
+    assert result.loc[5, "bonded_environments"] == "O(HC)"
 
 
 def test_hydrogen_inclusion_is_deterministic():
@@ -70,9 +70,20 @@ def test_hydrogen_inclusion_is_deterministic():
     )
     with_h = annotate_bonding_environments(df)
     without_h = annotate_bonding_environments(df, include_hydrogens=False)
-    assert with_h.loc[0, "bonded_environments"] == "N(CH)"
+    assert with_h.loc[0, "bonded_environments"] == "N(HC)"
     assert without_h.loc[0, "bonded_environments"] == "N(C)"
     assert with_h.loc[2, "bonded_environments"] == "H(N)"
+
+
+def test_multi_letter_elements_use_standard_capitalization():
+    df = _atoms(
+        [
+            ("C", 1, "HEM", "FE", "FE"),
+            ("D", 1, "CL", "CL", "cl"),
+        ]
+    )
+    result = annotate_bonding_environments(df)
+    assert result["bonded_environments"].tolist() == ["Fe()", "Cl()"]
 
 
 def test_missing_columns_are_reported():
