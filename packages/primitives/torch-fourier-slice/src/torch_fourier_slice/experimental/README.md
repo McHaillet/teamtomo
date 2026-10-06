@@ -121,9 +121,7 @@ Python side (`experimental/`):
 | file | role |
 |------|------|
 | `project.py`, `backproject.py` | **real-space API**: `project_3d_to_2d` / `backproject_2d_to_3d` (+ `_multichannel`) — padding, FFTs, gridding correction |
-| `extraction/_extract_central_slices_rfft_3d.py`, `insertion/_insert_central_slices_rfft_3d.py` | Fourier API: 3D volume ↔ 2D central slices, posed by a rotation matrix |
-| `extraction/_extract_central_lines_rfft_3d.py`, `insertion/_insert_central_lines_rfft_3d.py` | Fourier API: 3D volume ↔ 1D central lines, posed by a direction |
-| `extraction/_extract_central_lines_rfft_2d.py`, `insertion/_insert_central_lines_rfft_2d.py` | Fourier API: 2D image ↔ 1D central lines |
+| `extraction.py`, `insertion.py` | **Fourier API**: 3D volume ↔ 2D central slices (posed by a rotation matrix), 3D volume ↔ 1D central lines (posed by a direction), 2D image ↔ 1D central lines |
 | `_gridding.py` | the de-apodization correction for each interpolation kernel (§7) |
 | `_conventions.py` | translates the canonical pose / Ewald arguments into kernel conventions |
 | `_backend/_slice_3d.py`, `_line_3d.py`, `_line_2d.py` | one module per operator family: the `run_*` ops (validate → build buffers + `KernelParams` → call a kernel) and the torch `autograd.Function`s built on them |
