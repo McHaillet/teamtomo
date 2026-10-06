@@ -17,7 +17,7 @@ Differentiable w.r.t. the volume (adjoint = 1D->3D line scatter), the
 Two rank forms share one Mojo kernel; the Python layer only squeezes / transposes:
 
 - single volume: ``volume_rfft (d, h, w)`` -> ``lines (bp, w)``
-- multi-volume:  ``volume_rfft (bv, d, h, w)`` -> ``lines (bp, bv, w)``
+- multi-channel:  ``volume_rfft (bv, d, h, w)`` -> ``lines (bp, bv, w)``
   (directions shared across volumes, or per-volume via ``(bv, bp, 3)``).
 """
 
@@ -25,40 +25,40 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ._autograd import ProjectLineForward
+from .._backend._line_3d import ExtractLines3D
 
 if TYPE_CHECKING:
     import torch
 
 
-def _extract_line(
+def _extract_lines(
     volume_rfft,
     directions,
     shifts_3d,
     output_length,
     oversampling,
-    fourier_radius_cutoff,
+    fftfreq_max,
     interpolation,
 ):
     """Run the differentiable kernel in its canonical ``(bv, bp, w)`` layout."""
-    return ProjectLineForward.apply(
+    return ExtractLines3D.apply(
         volume_rfft,
         directions,
         shifts_3d,
         output_length,
         oversampling,
-        fourier_radius_cutoff,
+        fftfreq_max,
         interpolation,
     )
 
 
-def extract_central_line_rfft_3d(
+def extract_central_lines_rfft_3d(
     volume_rfft: torch.Tensor,
     directions: torch.Tensor,
     shifts_3d: torch.Tensor | None = None,
     output_length: int | None = None,
     oversampling: float = 1.0,
-    fourier_radius_cutoff: float | None = None,
+    fftfreq_max: float | None = None,
     interpolation: str = "linear",
 ) -> torch.Tensor:
     """Extract 1D central lines from one 3D rfft volume (Mojo kernel).
@@ -78,8 +78,8 @@ def extract_central_line_rfft_3d(
     output_length : int | None
         Even box length ``L`` of the line; the node is the rfft half-line of
         length ``L//2+1``. Defaults to the volume side ``h``.
-    oversampling, fourier_radius_cutoff, interpolation
-        As for the slice kernels (cutoff defaults to Nyquist ``L/2``;
+    oversampling, fftfreq_max, interpolation
+        As for the slice kernels (cutoff defaults to Nyquist ``0.5``;
         interpolation ``"linear"`` / ``"cubic"``).
 
     Returns complex ``(bp, w)`` lines (rfft half-line, DC at origin) on the input
@@ -88,27 +88,27 @@ def extract_central_line_rfft_3d(
     if volume_rfft.dim() != 3:
         raise ValueError(
             "volume_rfft must be (d, h, w) for a single volume; use "
-            "extract_central_line_rfft_3d_multivolume for (bv, d, h, w)"
+            "extract_central_lines_rfft_3d_multichannel for (bv, d, h, w)"
         )
-    out = _extract_line(
+    out = _extract_lines(
         volume_rfft,
         directions,
         shifts_3d,
         output_length,
         oversampling,
-        fourier_radius_cutoff,
+        fftfreq_max,
         interpolation,
     )
     return out.squeeze(0)  # (1, bp, w) -> (bp, w)
 
 
-def extract_central_line_rfft_3d_multivolume(
+def extract_central_lines_rfft_3d_multichannel(
     volume_rfft: torch.Tensor,
     directions: torch.Tensor,
     shifts_3d: torch.Tensor | None = None,
     output_length: int | None = None,
     oversampling: float = 1.0,
-    fourier_radius_cutoff: float | None = None,
+    fftfreq_max: float | None = None,
     interpolation: str = "linear",
 ) -> torch.Tensor:
     """Extract 1D central lines from a batch of 3D rfft volumes (Mojo kernel).
@@ -119,14 +119,14 @@ def extract_central_line_rfft_3d_multivolume(
     Returns complex ``(bp, bv, w)`` lines (pose-major) on the input device.
     """
     if volume_rfft.dim() != 4:
-        raise ValueError("volume_rfft must be (bv, d, h, w) for multi-volume")
-    out = _extract_line(
+        raise ValueError("volume_rfft must be (bv, d, h, w) for multi-channel")
+    out = _extract_lines(
         volume_rfft,
         directions,
         shifts_3d,
         output_length,
         oversampling,
-        fourier_radius_cutoff,
+        fftfreq_max,
         interpolation,
     )
     return out.transpose(0, 1).contiguous()  # (bv, bp, w) -> (bp, bv, w)

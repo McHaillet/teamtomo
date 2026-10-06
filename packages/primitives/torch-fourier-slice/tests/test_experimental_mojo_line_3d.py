@@ -13,11 +13,11 @@ import pytest
 import torch
 
 from torch_fourier_slice.experimental import (
-    extract_central_line_rfft_3d,
-    extract_central_line_rfft_3d_multivolume,
+    extract_central_lines_rfft_3d,
+    extract_central_lines_rfft_3d_multichannel,
     extract_central_slices_rfft_3d,
-    insert_central_line_rfft_3d,
-    insert_central_line_rfft_3d_multivolume,
+    insert_central_lines_rfft_3d,
+    insert_central_lines_rfft_3d_multichannel,
     mojo_kernels_available,
 )
 
@@ -96,7 +96,7 @@ def _gpu_usable() -> bool:
         return False
     try:
         rfft = _rfft(torch.randn(8, 8, 8))
-        extract_central_line_rfft_3d(
+        extract_central_lines_rfft_3d(
             rfft.to(dev), directions=torch.tensor([0.0, 0.0, 1.0])
         )
     except Exception:
@@ -117,12 +117,16 @@ def test_line_equals_slice_dc_row(interp):
     rfft = _rfft(torch.randn(d, d, d, dtype=torch.float32))
     rot = _rand_rot(6, 2)
     u = rot[:, :, 2].contiguous()  # third column = the slice's x-axis direction
-    cut = d / 4.0
+    cut = 0.25
     sl = extract_central_slices_rfft_3d(
-        rfft, rotations=rot, fourier_radius_cutoff=cut, interpolation=interp
+        rfft,
+        zyx_matrices=True,
+        rotation_matrices=rot,
+        fftfreq_max=cut,
+        interpolation=interp,
     )  # (6, d, d//2+1)
-    ln = extract_central_line_rfft_3d(
-        rfft, directions=u, fourier_radius_cutoff=cut, interpolation=interp
+    ln = extract_central_lines_rfft_3d(
+        rfft, directions=u, fftfreq_max=cut, interpolation=interp
     )  # (6, d//2+1)
     assert ln.shape == (6, d // 2 + 1)
     assert torch.equal(ln, sl[:, 0, :])
@@ -136,14 +140,15 @@ def test_line_shifts_3d_equals_slice_dc_row():
     rot = _rand_rot(5, 2)
     u = rot[:, :, 2].contiguous()
     s3 = torch.randn(1, 5, 3) * 0.4
-    cut = d / 4.0
+    cut = 0.25
     sl = extract_central_slices_rfft_3d(
-        rfft, rotations=rot, shifts_3d=s3, fourier_radius_cutoff=cut
+        rfft, zyx_matrices=True, rotation_matrices=rot, shifts_3d=s3, fftfreq_max=cut
     )
-    ln = extract_central_line_rfft_3d(
-        rfft, directions=u, shifts_3d=s3, fourier_radius_cutoff=cut
+    ln = extract_central_lines_rfft_3d(
+        rfft, directions=u, shifts_3d=s3, fftfreq_max=cut
     )
-    assert torch.equal(ln, sl[:, 0, :])
+    # separately compiled phase code: equal to float32 rounding, not bit-for-bit
+    assert torch.allclose(ln, sl[:, 0, :], rtol=1e-6, atol=1e-5)
 
 
 # ---------------------------------------------------------------------------
@@ -158,12 +163,12 @@ def test_line_extract_gradient(interp):
     d, P = 24, 8
     dh = d // 2 + 1
     u = _rand_dirs(P, 1)
-    cut = d / 4.0
+    cut = 0.25
     w = torch.randn(P, dh, dtype=torch.complex64)
 
     def loss(rec):
-        ln = extract_central_line_rfft_3d(
-            rec, directions=u, fourier_radius_cutoff=cut, interpolation=interp
+        ln = extract_central_lines_rfft_3d(
+            rec, directions=u, fftfreq_max=cut, interpolation=interp
         )
         return torch.real(torch.sum(torch.conj(w) * ln))
 
@@ -178,12 +183,12 @@ def test_line_insert_gradient_and_weights(interp):
     d, P = 24, 8
     dh = d // 2 + 1
     u = _rand_dirs(P, 1)
-    cut = d / 4.0
+    cut = 0.25
     wv = torch.randn(d, d, dh, dtype=torch.complex64)
 
     def loss(lines):
-        vol, _ = insert_central_line_rfft_3d(
-            lines, directions=u, fourier_radius_cutoff=cut, interpolation=interp
+        vol, _ = insert_central_lines_rfft_3d(
+            lines, directions=u, fftfreq_max=cut, interpolation=interp
         )
         return torch.real(torch.sum(torch.conj(wv) * vol))
 
@@ -191,12 +196,12 @@ def test_line_insert_gradient_and_weights(interp):
     assert _linear_grad_ratio_ok(loss, lines)
 
     weights = torch.rand(P, dh)
-    data_vol, weight_vol = insert_central_line_rfft_3d(
+    data_vol, weight_vol = insert_central_lines_rfft_3d(
         lines.detach(), directions=u, weights=weights
     )
     assert weight_vol is not None
     assert weight_vol.shape == data_vol.shape and weight_vol.dtype == torch.float32
-    _, none_w = insert_central_line_rfft_3d(lines.detach(), directions=u)
+    _, none_w = insert_central_lines_rfft_3d(lines.detach(), directions=u)
     assert none_w is None
 
 
@@ -211,18 +216,18 @@ def test_line_extract_pose_gradients(interp):
     torch.manual_seed(0)
     d, P = 20, 3
     dh = d // 2 + 1
-    cut = d / 4.0
+    cut = 0.25
     vol = torch.randn(d, d, dh, dtype=torch.complex64)
     u0 = _rand_dirs(P, 1)
     s0 = torch.randn(P, 3) * 0.5
     target = torch.randn(P, dh, dtype=torch.complex64)
 
     def loss(u, s):
-        p = extract_central_line_rfft_3d(
+        p = extract_central_lines_rfft_3d(
             vol,
             directions=u,
             shifts_3d=s,
-            fourier_radius_cutoff=cut,
+            fftfreq_max=cut,
             interpolation=interp,
         )
         return ((p - target).abs() ** 2).sum()
@@ -244,7 +249,7 @@ def test_line_insert_pose_and_weight_gradients(interp):
     torch.manual_seed(0)
     d, P = 20, 3
     dh = d // 2 + 1
-    cut = d / 4.0
+    cut = 0.25
     lines = _herm_lines(P, d, 7)  # Hermitian: a valid line stack
     u0 = _rand_dirs(P, 1)
     s0 = torch.randn(P, 3) * 0.5
@@ -252,11 +257,11 @@ def test_line_insert_pose_and_weight_gradients(interp):
     weight_cotangent = torch.randn(d, d, dh)
 
     def data_loss(u, s):
-        dvol, _ = insert_central_line_rfft_3d(
+        dvol, _ = insert_central_lines_rfft_3d(
             lines,
             directions=u,
             shifts_3d=s,
-            fourier_radius_cutoff=cut,
+            fftfreq_max=cut,
             interpolation=interp,
         )
         return ((dvol - data_t).abs() ** 2).sum()
@@ -271,11 +276,11 @@ def test_line_insert_pose_and_weight_gradients(interp):
     # exact adjoint -- test that directly with an R-linear loss (a dot-product
     # test, robust to the float32 cancellation a quadratic FD would suffer).
     def weight_loss(wts):
-        _, wvol = insert_central_line_rfft_3d(
+        _, wvol = insert_central_lines_rfft_3d(
             lines,
             directions=u0,
             weights=wts,
-            fourier_radius_cutoff=cut,
+            fftfreq_max=cut,
             interpolation=interp,
         )
         return (wvol * weight_cotangent).sum()
@@ -303,9 +308,9 @@ def test_line_roundtrip_reconstruction():
     rfft = _rfft(vol)
 
     u = _rand_dirs(4000, 7)
-    lines = extract_central_line_rfft_3d(rfft, directions=u)
+    lines = extract_central_lines_rfft_3d(rfft, directions=u)
     weights = torch.ones_like(lines.real)
-    data_vol, wvol = insert_central_line_rfft_3d(lines, directions=u, weights=weights)
+    data_vol, wvol = insert_central_lines_rfft_3d(lines, directions=u, weights=weights)
     recon = data_vol / wvol.clamp(min=1.0)
 
     kz = torch.fft.fftfreq(d)[:, None, None] * d
@@ -337,44 +342,44 @@ def test_line_roundtrip_reconstruction():
 # ---------------------------------------------------------------------------
 
 
-def test_line_rank_single_and_multivolume():
-    """rfft-layer extract/insert: single (squeeze) vs multivolume (transpose)."""
+def test_line_rank_single_and_multichannel():
+    """rfft-layer extract/insert: single (squeeze) vs multichannel (transpose)."""
     torch.manual_seed(0)
     d, P, bv = 24, 5, 3
     dh = d // 2 + 1
     u = _rand_dirs(P, 1)
     vols = torch.randn(bv, d, d, dh, dtype=torch.complex64)
 
-    s0 = extract_central_line_rfft_3d(vols[0], u)
+    s0 = extract_central_lines_rfft_3d(vols[0], u)
     assert s0.shape == (P, dh)
 
-    sm = extract_central_line_rfft_3d_multivolume(vols, u)
+    sm = extract_central_lines_rfft_3d_multichannel(vols, u)
     assert sm.shape == (P, bv, dh)
     for i in range(bv):
-        assert torch.allclose(sm[:, i], extract_central_line_rfft_3d(vols[i], u))
+        assert torch.allclose(sm[:, i], extract_central_lines_rfft_3d(vols[i], u))
 
     dirs_pv = torch.stack([_rand_dirs(P, i + 1) for i in range(bv)])
-    smp = extract_central_line_rfft_3d_multivolume(vols, dirs_pv)
+    smp = extract_central_lines_rfft_3d_multichannel(vols, dirs_pv)
     assert smp.shape == (P, bv, dh)
     for i in range(bv):
         assert torch.allclose(
-            smp[:, i], extract_central_line_rfft_3d(vols[i], dirs_pv[i])
+            smp[:, i], extract_central_lines_rfft_3d(vols[i], dirs_pv[i])
         )
 
     lines = torch.randn(P, dh, dtype=torch.complex64)
-    v0, w0 = insert_central_line_rfft_3d(lines, u)
+    v0, w0 = insert_central_lines_rfft_3d(lines, u)
     assert v0.shape == (d, d, dh) and w0 is None
 
     lines_m = torch.randn(P, bv, dh, dtype=torch.complex64)
-    vm, wm = insert_central_line_rfft_3d_multivolume(lines_m, u)
+    vm, wm = insert_central_lines_rfft_3d_multichannel(lines_m, u)
     assert vm.shape == (bv, d, d, dh) and wm is None
     for i in range(bv):
-        vi, _ = insert_central_line_rfft_3d(lines_m[:, i], u)
+        vi, _ = insert_central_lines_rfft_3d(lines_m[:, i], u)
         assert torch.allclose(vm[i], vi)
 
     # gradients flow through the rank adaptation (squeeze / transpose)
     v = vols[0].clone().requires_grad_(True)
-    extract_central_line_rfft_3d(v, u).abs().pow(2).sum().backward()
+    extract_central_lines_rfft_3d(v, u).abs().pow(2).sum().backward()
     assert v.grad is not None and v.grad.shape == vols[0].shape
 
 
@@ -386,9 +391,11 @@ def test_line_output_length():
     rot = _rand_rot(4, 1)
     u = rot[:, :, 2].contiguous()
     L = 20
-    ln = extract_central_line_rfft_3d(rfft, directions=u, output_length=L)
+    ln = extract_central_lines_rfft_3d(rfft, directions=u, output_length=L)
     assert ln.shape == (4, L // 2 + 1)
-    sl = extract_central_slices_rfft_3d(rfft, rotations=rot, output_shape=(L, L))
+    sl = extract_central_slices_rfft_3d(
+        rfft, zyx_matrices=True, rotation_matrices=rot, output_shape=(L, L)
+    )
     assert torch.equal(ln, sl[:, 0, :])
 
 
@@ -408,17 +415,19 @@ def test_gpu_line_matches_cpu(interp):
     rfft = _rfft(torch.randn(d, d, d, dtype=torch.float32))
     u = _rand_dirs(P, 3)
 
-    cpu = extract_central_line_rfft_3d(rfft, directions=u, interpolation=interp)
-    gpu = extract_central_line_rfft_3d(rfft.to(dev), directions=u, interpolation=interp)
+    cpu = extract_central_lines_rfft_3d(rfft, directions=u, interpolation=interp)
+    gpu = extract_central_lines_rfft_3d(
+        rfft.to(dev), directions=u, interpolation=interp
+    )
     assert gpu.device.type == dev
     assert torch.allclose(gpu.cpu(), cpu, atol=1e-3)
 
     lines = torch.randn(P, dh, dtype=torch.complex64)
     w = torch.rand(P, dh)
-    cv, cw = insert_central_line_rfft_3d(
+    cv, cw = insert_central_lines_rfft_3d(
         lines, directions=u, weights=w, interpolation=interp
     )
-    gv, gw = insert_central_line_rfft_3d(
+    gv, gw = insert_central_lines_rfft_3d(
         lines.to(dev), directions=u, weights=w.to(dev), interpolation=interp
     )
     assert gv.device.type == dev
@@ -443,7 +452,7 @@ def test_gpu_line_pose_weight_gradients_match_cpu():
     def fwd_grads(device):
         u = u0.clone().to(device).requires_grad_(True)
         s = s0.clone().to(device).requires_grad_(True)
-        p = extract_central_line_rfft_3d(vol.to(device), directions=u, shifts_3d=s)
+        p = extract_central_lines_rfft_3d(vol.to(device), directions=u, shifts_3d=s)
         ((p - target.to(device)).abs() ** 2).sum().backward()
         return u.grad.cpu(), s.grad.cpu()
 
@@ -451,7 +460,7 @@ def test_gpu_line_pose_weight_gradients_match_cpu():
         u = u0.clone().to(device).requires_grad_(True)
         s = s0.clone().to(device).requires_grad_(True)
         w = wts0.clone().to(device).requires_grad_(True)
-        dvol, _ = insert_central_line_rfft_3d(
+        dvol, _ = insert_central_lines_rfft_3d(
             lines.to(device), directions=u, shifts_3d=s, weights=w
         )
         (dvol.abs() ** 2).sum().backward()

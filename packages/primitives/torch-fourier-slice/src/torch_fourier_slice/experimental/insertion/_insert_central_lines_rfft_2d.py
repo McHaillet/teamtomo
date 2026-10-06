@@ -1,6 +1,6 @@
 """Experimental Mojo-backed 1D->2D central-line insertion (rfft layer).
 
-The adjoint of :func:`extract_central_line_rfft_2d`: scatter 1D central lines into
+The adjoint of :func:`extract_central_lines_rfft_2d`: scatter 1D central lines into
 a 2D rfft image (Hermitian, DC at origin), optionally accumulating per-sample
 weights for density compensation. Reconstructs an image from its sinogram lines
 (2D direct Fourier inversion). Differentiable w.r.t. the input ``lines``.
@@ -13,19 +13,19 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ._autograd import InsertLine2DForward
+from .._backend._line_2d import InsertLines2D
 
 if TYPE_CHECKING:
     import torch
 
 
-def insert_central_line_rfft_2d(
+def insert_central_lines_rfft_2d(
     lines: torch.Tensor,
     directions: torch.Tensor,
     shifts_2d: torch.Tensor | None = None,
     weights: torch.Tensor | None = None,
     oversampling: float = 1.0,
-    fourier_radius_cutoff: float | None = None,
+    fftfreq_max: float | None = None,
     interpolation: str = "linear",
 ) -> tuple[torch.Tensor, torch.Tensor | None]:
     """Insert 1D central lines into one 2D rfft image (Mojo scatter kernel).
@@ -37,15 +37,15 @@ def insert_central_line_rfft_2d(
     """
     if lines.dim() != 2:
         raise ValueError(
-            "lines must be (bp, w); use insert_central_line_rfft_2d_multivolume"
+            "lines must be (bp, w); use insert_central_lines_rfft_2d_multichannel"
         )
-    data, wimg = InsertLine2DForward.apply(
+    data, wimg = InsertLines2D.apply(
         lines,
         weights,
         directions,
         shifts_2d,
         oversampling,
-        fourier_radius_cutoff,
+        fftfreq_max,
         interpolation,
     )
     if weights is None:
@@ -53,13 +53,13 @@ def insert_central_line_rfft_2d(
     return data.squeeze(0), wimg.squeeze(0)
 
 
-def insert_central_line_rfft_2d_multivolume(
+def insert_central_lines_rfft_2d_multichannel(
     lines: torch.Tensor,
     directions: torch.Tensor,
     shifts_2d: torch.Tensor | None = None,
     weights: torch.Tensor | None = None,
     oversampling: float = 1.0,
-    fourier_radius_cutoff: float | None = None,
+    fftfreq_max: float | None = None,
     interpolation: str = "linear",
 ) -> tuple[torch.Tensor, torch.Tensor | None]:
     """Insert 1D central lines into a batch of 2D rfft images (Mojo kernel).
@@ -71,13 +71,13 @@ def insert_central_line_rfft_2d_multivolume(
         raise ValueError("lines must be (bp, bv, w) for multi-image")
     lines_bv = lines.transpose(0, 1).contiguous()  # (bp, bv, w) -> (bv, bp, w)
     w = weights.transpose(0, 1).contiguous() if weights is not None else None
-    data, wimg = InsertLine2DForward.apply(
+    data, wimg = InsertLines2D.apply(
         lines_bv,
         w,
         directions,
         shifts_2d,
         oversampling,
-        fourier_radius_cutoff,
+        fftfreq_max,
         interpolation,
     )
     return data, (wimg if weights is not None else None)

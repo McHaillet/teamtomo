@@ -1,4 +1,4 @@
-"""Input validation and host-buffer preparation shared by the projectors.
+"""Input validation and host-buffer preparation shared by the Fourier-slice operators.
 
 Naming follows the kernels: ``bv`` is the batch of volumes, ``bp`` the batch of
 projections; a volume's spatial axes are ``(d, h, w)`` with ``sidelength`` the
@@ -92,7 +92,7 @@ def prep_rotations(
     return rot, bv_rot, bp
 
 
-def prep_directions(
+def prep_directions_3d(
     directions: torch.Tensor, bv: int, device: torch.device | str = "cpu"
 ) -> tuple[torch.Tensor, int, int]:
     """Normalise line directions to float32 ``(bv_dir, bp, 3)`` on ``device``.
@@ -207,7 +207,7 @@ def prep_poses(
     shifts_2d: torch.Tensor | None,
     output_shape: tuple[int, int] | None,
     oversampling: float,
-    fourier_radius_cutoff: float | None,
+    fftfreq_max: float | None,
     interpolation: str,
     ewald_curvature: float = 0.0,
     shifts_3d: torch.Tensor | None = None,
@@ -235,8 +235,8 @@ def prep_poses(
 
     radius = (
         proj_sidelength / 2.0
-        if fourier_radius_cutoff is None
-        else float(fourier_radius_cutoff)
+        if fftfreq_max is None
+        else float(fftfreq_max) * proj_sidelength
     )
     proj_r = torch.zeros(
         bv,

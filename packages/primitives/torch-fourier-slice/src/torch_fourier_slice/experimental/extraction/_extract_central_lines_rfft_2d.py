@@ -17,19 +17,19 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ._autograd import ProjectLine2DForward
+from .._backend._line_2d import ExtractLines2D
 
 if TYPE_CHECKING:
     import torch
 
 
-def extract_central_line_rfft_2d(
+def extract_central_lines_rfft_2d(
     image_rfft: torch.Tensor,
     directions: torch.Tensor,
     shifts_2d: torch.Tensor | None = None,
     output_length: int | None = None,
     oversampling: float = 1.0,
-    fourier_radius_cutoff: float | None = None,
+    fftfreq_max: float | None = None,
     interpolation: str = "linear",
 ) -> torch.Tensor:
     """Extract 1D central lines from one 2D rfft image (Mojo kernel).
@@ -41,27 +41,27 @@ def extract_central_line_rfft_2d(
     """
     if image_rfft.dim() != 2:
         raise ValueError(
-            "image_rfft must be (h, w); use extract_central_line_rfft_2d_multivolume"
+            "image_rfft must be (h, w); use extract_central_lines_rfft_2d_multichannel"
         )
-    out = ProjectLine2DForward.apply(
+    out = ExtractLines2D.apply(
         image_rfft,
         directions,
         shifts_2d,
         output_length,
         oversampling,
-        fourier_radius_cutoff,
+        fftfreq_max,
         interpolation,
     )
     return out.squeeze(0)  # (1, bp, w) -> (bp, w)
 
 
-def extract_central_line_rfft_2d_multivolume(
+def extract_central_lines_rfft_2d_multichannel(
     image_rfft: torch.Tensor,
     directions: torch.Tensor,
     shifts_2d: torch.Tensor | None = None,
     output_length: int | None = None,
     oversampling: float = 1.0,
-    fourier_radius_cutoff: float | None = None,
+    fftfreq_max: float | None = None,
     interpolation: str = "linear",
 ) -> torch.Tensor:
     """Extract 1D central lines from a batch of 2D rfft images (Mojo kernel).
@@ -71,13 +71,13 @@ def extract_central_line_rfft_2d_multivolume(
     """
     if image_rfft.dim() != 3:
         raise ValueError("image_rfft must be (bv, h, w) for multi-image")
-    out = ProjectLine2DForward.apply(
+    out = ExtractLines2D.apply(
         image_rfft,
         directions,
         shifts_2d,
         output_length,
         oversampling,
-        fourier_radius_cutoff,
+        fftfreq_max,
         interpolation,
     )
     return out.transpose(0, 1).contiguous()  # (bv, bp, w) -> (bp, bv, w)
