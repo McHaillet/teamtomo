@@ -19,6 +19,16 @@ def to_zyx_matrices(
     return torch.flip(rotation_matrices, dims=(-2, -1))
 
 
+def to_zyx_vectors(vectors: torch.Tensor | None, zyx: bool) -> torch.Tensor | None:
+    """Directions / shifts in zyx (or yx) component order, as the kernels expect.
+
+    xyz (or xy) vectors (``zyx=False``) are converted by flipping the last axis.
+    """
+    if vectors is None or zyx:
+        return vectors
+    return torch.flip(vectors, dims=(-1,))
+
+
 def ewald_coefficient(
     sidelength: int,
     apply_ewald_curvature: bool,

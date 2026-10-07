@@ -20,9 +20,10 @@ Shared parameters (both forms):
 - ``rotation_matrices``: ``(3, 3)`` / ``(bp, 3, 3)`` (single volume) or also
   ``(bv, bp, 3, 3)`` for per-volume poses (multi-channel). They act on xyz
   vectors unless ``zyx_matrices=True``.
-- ``shifts_3d``: optional ``(..., bp, 3)`` zyx shifts in the volume frame (before
-  rotation); ``shifts_2d``: optional ``(..., bp, 2)`` yx shifts in the projection
-  plane (after rotation).
+- ``shifts_3d``: optional ``(..., bp, 3)`` shifts in the volume frame (before
+  rotation), xyz unless ``zyx_shifts=True``; ``shifts_2d``: optional
+  ``(..., bp, 2)`` shifts in the projection plane (after rotation), xy unless
+  ``yx_shifts=True``.
 - ``output_shape``: ``(H_out, W_out)`` square/even, default ``(h, h)``.
 - ``oversampling``: coordinate scale (>1 oversamples); ``fftfreq_max``:
   cutoff in cycles/pixel, default Nyquist (0.5); ``interpolation``: ``"linear"``
@@ -40,7 +41,7 @@ central line is the degenerate central slice whose in-plane (y) axis is collapse
 to the single DC row -- the projection-slice theorem applied a second time (a
 line through the origin of a slice is a line through the origin of the 3D
 transform). The node is a complex rfft half-line sampled along a direction ``u``
-(a zyx unit vector, the real-space line direction, unchanged in Fourier space);
+(a unit vector, the real-space line direction, unchanged in Fourier space);
 ``line(-u) = conj(line(u))``, so nodes live on RP². A bare line needs only its
 direction, not a rotation matrix -- rotating about the line's own axis is a gauge
 the values are blind to.
@@ -58,7 +59,7 @@ Central lines: 2D image -> 1D lines
 -----------------------------------
 
 Sample 1D central lines from a 2D rfft image (DC at origin), indexed by a
-**direction** ``u = (u_y, u_x)`` on the circle (yx unit vector). ``line[s] =
+**direction** ``u`` on the circle (a unit vector). ``line[s] =
 F(s*u)``; by the projection-slice theorem this is the 1D FT of the image's
 projection onto the ``u`` axis (a Radon sinogram row). This is the graph's node
 factory: nodes come from each crop's 2D FT, not the 3D volume.
@@ -77,7 +78,7 @@ from typing import TYPE_CHECKING
 from ._backend._line_2d import ExtractLines2D
 from ._backend._line_3d import ExtractLines3D
 from ._backend._slice_3d import ExtractSlices3D
-from ._conventions import ewald_coefficient, to_zyx_matrices
+from ._conventions import ewald_coefficient, to_zyx_matrices, to_zyx_vectors
 
 if TYPE_CHECKING:
     import torch
@@ -92,6 +93,8 @@ def _extract_slices_3d(
     oversampling,
     fftfreq_max,
     zyx_matrices,
+    zyx_shifts,
+    yx_shifts,
     interpolation,
     apply_ewald_curvature,
     ewald_voltage_kv,
@@ -102,8 +105,8 @@ def _extract_slices_3d(
     return ExtractSlices3D.apply(
         volume_rfft,
         to_zyx_matrices(rotation_matrices, zyx_matrices),
-        shifts_2d,
-        shifts_3d,
+        to_zyx_vectors(shifts_2d, yx_shifts),
+        to_zyx_vectors(shifts_3d, zyx_shifts),
         output_shape,
         oversampling,
         fftfreq_max,
@@ -127,6 +130,8 @@ def extract_central_slices_rfft_3d(
     oversampling: float = 1.0,
     fftfreq_max: float | None = None,
     zyx_matrices: bool = False,
+    zyx_shifts: bool = False,
+    yx_shifts: bool = False,
     interpolation: str = "linear",
     apply_ewald_curvature: bool = False,
     ewald_voltage_kv: float = 300.0,
@@ -156,6 +161,8 @@ def extract_central_slices_rfft_3d(
         oversampling,
         fftfreq_max,
         zyx_matrices,
+        zyx_shifts,
+        yx_shifts,
         interpolation,
         apply_ewald_curvature,
         ewald_voltage_kv,
@@ -174,6 +181,8 @@ def extract_central_slices_rfft_3d_multichannel(
     oversampling: float = 1.0,
     fftfreq_max: float | None = None,
     zyx_matrices: bool = False,
+    zyx_shifts: bool = False,
+    yx_shifts: bool = False,
     interpolation: str = "linear",
     apply_ewald_curvature: bool = False,
     ewald_voltage_kv: float = 300.0,
@@ -200,6 +209,8 @@ def extract_central_slices_rfft_3d_multichannel(
         oversampling,
         fftfreq_max,
         zyx_matrices,
+        zyx_shifts,
+        yx_shifts,
         interpolation,
         apply_ewald_curvature,
         ewald_voltage_kv,
@@ -216,13 +227,15 @@ def _extract_lines_3d(
     output_length,
     oversampling,
     fftfreq_max,
+    zyx_directions,
+    zyx_shifts,
     interpolation,
 ):
     """Run the differentiable kernel in its canonical ``(bv, bp, w)`` layout."""
     return ExtractLines3D.apply(
         volume_rfft,
-        directions,
-        shifts_3d,
+        to_zyx_vectors(directions, zyx_directions),
+        to_zyx_vectors(shifts_3d, zyx_shifts),
         output_length,
         oversampling,
         fftfreq_max,
@@ -237,6 +250,8 @@ def extract_central_lines_rfft_3d(
     output_length: int | None = None,
     oversampling: float = 1.0,
     fftfreq_max: float | None = None,
+    zyx_directions: bool = False,
+    zyx_shifts: bool = False,
     interpolation: str = "linear",
 ) -> torch.Tensor:
     """Extract 1D central lines from one 3D rfft volume (Mojo kernel).
@@ -247,11 +262,11 @@ def extract_central_lines_rfft_3d(
         Complex rfft volume ``(d, h, w)`` (DC at origin, cubic, even). Its device
         selects the CPU/GPU backend.
     directions : torch.Tensor
-        Real ``(3,)`` / ``(bp, 3)`` zyx **unit** direction vectors on the sphere;
+        Real ``(3,)`` / ``(bp, 3)`` **unit** direction vectors on the sphere;
         the line is sampled along ``k = s * u``. ``bp`` is the number of line
         nodes. A non-unit ``u`` rescales the line's frequency sampling.
     shifts_3d : torch.Tensor | None
-        Optional ``(..., bp, 3)`` zyx shift in the volume frame; applied as the
+        Optional ``(..., bp, 3)`` shift in the volume frame; applied as the
         per-node ``s * (u . t)`` phase ramp (the design's translation model).
     output_length : int | None
         Even box length ``L`` of the line; the node is the rfft half-line of
@@ -259,6 +274,9 @@ def extract_central_lines_rfft_3d(
     oversampling, fftfreq_max, interpolation
         As for the slice extraction (cutoff defaults to Nyquist ``0.5``;
         interpolation ``"linear"`` / ``"cubic"``).
+    zyx_directions, zyx_shifts : bool
+        If True, ``directions`` / ``shifts_3d`` are in zyx order. If False
+        (default) they are xyz.
 
     Returns complex ``(bp, w)`` lines (rfft half-line, DC at origin) on the input
     device, where ``w = output_length//2 + 1``.
@@ -275,6 +293,8 @@ def extract_central_lines_rfft_3d(
         output_length,
         oversampling,
         fftfreq_max,
+        zyx_directions,
+        zyx_shifts,
         interpolation,
     )
     return out.squeeze(0)  # (1, bp, w) -> (bp, w)
@@ -287,6 +307,8 @@ def extract_central_lines_rfft_3d_multichannel(
     output_length: int | None = None,
     oversampling: float = 1.0,
     fftfreq_max: float | None = None,
+    zyx_directions: bool = False,
+    zyx_shifts: bool = False,
     interpolation: str = "linear",
 ) -> torch.Tensor:
     """Extract 1D central lines from a batch of 3D rfft volumes (Mojo kernel).
@@ -305,9 +327,34 @@ def extract_central_lines_rfft_3d_multichannel(
         output_length,
         oversampling,
         fftfreq_max,
+        zyx_directions,
+        zyx_shifts,
         interpolation,
     )
     return out.transpose(0, 1).contiguous()  # (bv, bp, w) -> (bp, bv, w)
+
+
+def _extract_lines_2d(
+    image_rfft,
+    directions,
+    shifts_2d,
+    output_length,
+    oversampling,
+    fftfreq_max,
+    yx_directions,
+    yx_shifts,
+    interpolation,
+):
+    """Run the differentiable kernel in its canonical ``(bv, bp, w)`` layout."""
+    return ExtractLines2D.apply(
+        image_rfft,
+        to_zyx_vectors(directions, yx_directions),
+        to_zyx_vectors(shifts_2d, yx_shifts),
+        output_length,
+        oversampling,
+        fftfreq_max,
+        interpolation,
+    )
 
 
 def extract_central_lines_rfft_2d(
@@ -317,26 +364,31 @@ def extract_central_lines_rfft_2d(
     output_length: int | None = None,
     oversampling: float = 1.0,
     fftfreq_max: float | None = None,
+    yx_directions: bool = False,
+    yx_shifts: bool = False,
     interpolation: str = "linear",
 ) -> torch.Tensor:
     """Extract 1D central lines from one 2D rfft image (Mojo kernel).
 
     ``image_rfft`` is complex ``(h, w)`` (DC at origin, ``w = h//2+1``, even).
-    ``directions`` are ``(2,)`` / ``(bp, 2)`` yx unit vectors; ``shifts_2d`` are
-    optional ``(..., bp, 2)`` yx image translations (phase ramp). Returns complex
-    ``(bp, w_out)`` half-lines on the input device.
+    ``directions`` are ``(2,)`` / ``(bp, 2)`` unit vectors; ``shifts_2d`` are
+    optional ``(..., bp, 2)`` image translations (phase ramp). Both are xy unless
+    ``yx_directions`` / ``yx_shifts`` is True. Returns complex ``(bp, w_out)``
+    half-lines on the input device.
     """
     if image_rfft.dim() != 2:
         raise ValueError(
             "image_rfft must be (h, w); use extract_central_lines_rfft_2d_multichannel"
         )
-    out = ExtractLines2D.apply(
+    out = _extract_lines_2d(
         image_rfft,
         directions,
         shifts_2d,
         output_length,
         oversampling,
         fftfreq_max,
+        yx_directions,
+        yx_shifts,
         interpolation,
     )
     return out.squeeze(0)  # (1, bp, w) -> (bp, w)
@@ -349,6 +401,8 @@ def extract_central_lines_rfft_2d_multichannel(
     output_length: int | None = None,
     oversampling: float = 1.0,
     fftfreq_max: float | None = None,
+    yx_directions: bool = False,
+    yx_shifts: bool = False,
     interpolation: str = "linear",
 ) -> torch.Tensor:
     """Extract 1D central lines from a batch of 2D rfft images (Mojo kernel).
@@ -358,13 +412,15 @@ def extract_central_lines_rfft_2d_multichannel(
     """
     if image_rfft.dim() != 3:
         raise ValueError("image_rfft must be (bv, h, w) for multi-image")
-    out = ExtractLines2D.apply(
+    out = _extract_lines_2d(
         image_rfft,
         directions,
         shifts_2d,
         output_length,
         oversampling,
         fftfreq_max,
+        yx_directions,
+        yx_shifts,
         interpolation,
     )
     return out.transpose(0, 1).contiguous()  # (bv, bp, w) -> (bp, bv, w)

@@ -132,7 +132,7 @@ def test_shifts_apply_phase_ramp():
     )
     shift = torch.tensor([[[2.0, -3.0]]])  # (1, 1, 2) xy
     with_shift = extract_central_slices_rfft_3d(
-        rfft, zyx_matrices=True, rotation_matrices=rot, shifts_2d=shift
+        rfft, zyx_matrices=True, rotation_matrices=rot, shifts_2d=shift, yx_shifts=True
     )
 
     # Build the expected phase ramp: phase = -2pi/box * (ky*sx + kx*sy)
@@ -197,10 +197,14 @@ def test_gpu_matches_cpu():
     # with shifts (GPU transcendental precision differs slightly)
     shift = torch.randn(1, 6, 2)
     cpu_s = extract_central_slices_rfft_3d(
-        rfft, zyx_matrices=True, rotation_matrices=rot, shifts_2d=shift
+        rfft, zyx_matrices=True, rotation_matrices=rot, shifts_2d=shift, yx_shifts=True
     )
     gpu_s = extract_central_slices_rfft_3d(
-        rfft.to(dev), zyx_matrices=True, rotation_matrices=rot, shifts_2d=shift
+        rfft.to(dev),
+        zyx_matrices=True,
+        rotation_matrices=rot,
+        shifts_2d=shift,
+        yx_shifts=True,
     )
     assert torch.allclose(gpu_s.cpu(), cpu_s, atol=1e-3)
 
@@ -604,6 +608,7 @@ def test_forward_pose_gradients(interp):
             shifts_2d=sh,
             fftfreq_max=cut,
             interpolation=interp,
+            yx_shifts=True,
         )
         return ((p - target).abs() ** 2).sum()
 
@@ -636,6 +641,7 @@ def test_backprojection_pose_and_weight_gradients(interp):
             shifts_2d=sh,
             fftfreq_max=cut,
             interpolation=interp,
+            yx_shifts=True,
         )
         return ((dvol - data_t).abs() ** 2).sum()
 
@@ -745,6 +751,7 @@ def test_ewald_curvature_gradients(interp):
             fftfreq_max=cut,
             interpolation=interp,
             **ewald,
+            yx_shifts=True,
         )
         return ((p - target).abs() ** 2).sum()
 
@@ -795,6 +802,7 @@ def test_shifts_3d_gradients(interp):
         rotation_matrices=eye,
         shifts_2d=s2,
         interpolation=interp,
+        yx_shifts=True,
     )
     b = extract_central_slices_rfft_3d(
         vol,
@@ -802,6 +810,7 @@ def test_shifts_3d_gradients(interp):
         rotation_matrices=eye,
         shifts_3d=s3,
         interpolation=interp,
+        zyx_shifts=True,
     )
     assert torch.allclose(a, b, atol=1e-4)
 
@@ -813,6 +822,7 @@ def test_shifts_3d_gradients(interp):
             shifts_3d=s3d,
             fftfreq_max=cut,
             interpolation=interp,
+            zyx_shifts=True,
         )
         return ((p - target).abs() ** 2).sum()
 
@@ -832,6 +842,7 @@ def test_shifts_3d_gradients(interp):
             shifts_3d=s3d,
             fftfreq_max=cut,
             interpolation=interp,
+            zyx_shifts=True,
         )
         return ((dvol - data_t).abs() ** 2).sum()
 
@@ -859,7 +870,11 @@ def test_gpu_pose_weight_gradients_match_cpu():
         r = rot0.clone().to(device).requires_grad_(True)
         s = sh0.clone().to(device).requires_grad_(True)
         p = extract_central_slices_rfft_3d(
-            vol.to(device), zyx_matrices=True, rotation_matrices=r, shifts_2d=s
+            vol.to(device),
+            zyx_matrices=True,
+            rotation_matrices=r,
+            shifts_2d=s,
+            yx_shifts=True,
         )
         ((p - target.to(device)).abs() ** 2).sum().backward()
         return r.grad.cpu(), s.grad.cpu()
@@ -874,6 +889,7 @@ def test_gpu_pose_weight_gradients_match_cpu():
             rotation_matrices=r,
             weights=w,
             shifts_2d=s,
+            yx_shifts=True,
         )
         (dvol.abs() ** 2).sum().backward()
         return r.grad.cpu(), s.grad.cpu(), w.grad.cpu()
@@ -911,3 +927,31 @@ def test_output_shape_and_batching():
         rfft, rot, output_shape=(8, 8)
     )
     assert out_small.shape == (3, 2, 8, 8 // 2 + 1)
+
+
+def test_shifts_default_to_xyz_order():
+    """Shifts are xyz / xy by default; the zyx / yx flags take them flipped."""
+    torch.manual_seed(0)
+    d, P = 16, 4
+    rfft = torch.randn(d, d, d // 2 + 1, dtype=torch.complex64)
+    proj = torch.randn(P, d, d // 2 + 1, dtype=torch.complex64)
+    rot = _rand_rot(P, 3)
+    s3 = torch.randn(1, P, 3) * 0.5
+    s2 = torch.randn(1, P, 2) * 0.5
+    flipped = {
+        "shifts_3d": s3.flip(-1),
+        "shifts_2d": s2.flip(-1),
+        "zyx_shifts": True,
+        "yx_shifts": True,
+    }
+
+    xyz = extract_central_slices_rfft_3d(rfft, rot, shifts_3d=s3, shifts_2d=s2)
+    zyx = extract_central_slices_rfft_3d(rfft, rot, **flipped)
+    unshifted = extract_central_slices_rfft_3d(rfft, rot)
+    assert torch.equal(xyz, zyx)
+    assert not torch.allclose(xyz, unshifted, atol=1e-4)
+
+    xyz_vol, _ = insert_central_slices_rfft_3d(proj, rot, shifts_3d=s3, shifts_2d=s2)
+    zyx_vol, _ = insert_central_slices_rfft_3d(proj, rot, **flipped)
+    # atomic accumulation order varies between runs: not bit-for-bit
+    assert torch.allclose(xyz_vol, zyx_vol, rtol=1e-5, atol=1e-5)

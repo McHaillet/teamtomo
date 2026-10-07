@@ -40,7 +40,7 @@ Two rank forms share one Mojo kernel; the Python layer only squeezes / transpose
 - multi-channel:  ``lines (bp, bv, w)`` -> ``volumes (bv, d, h, w)``
   (directions shared across volumes, or per-volume via ``(bv, bp, 3)``).
 
-``directions`` are zyx unit vectors (as in the extractor); the insertion applies
+``directions`` are unit vectors (as in the extractor); the insertion applies
 the *conjugate* 3D-shift phase ramp (the forward adjoint). ``weights`` is an
 optional real per-sample tensor matching ``lines``, accumulated into a separate
 weight volume.
@@ -65,7 +65,7 @@ from ._backend._common import reconstruction_volume_shape
 from ._backend._line_2d import InsertLines2D
 from ._backend._line_3d import InsertLines3D
 from ._backend._slice_3d import InsertSlices3D
-from ._conventions import ewald_coefficient, to_zyx_matrices
+from ._conventions import ewald_coefficient, to_zyx_matrices, to_zyx_vectors
 
 if TYPE_CHECKING:
     import torch
@@ -80,6 +80,8 @@ def _insert_slices_3d(
     oversampling,
     fftfreq_max,
     zyx_matrices,
+    zyx_shifts,
+    yx_shifts,
     interpolation,
     apply_ewald_curvature,
     ewald_voltage_kv,
@@ -94,8 +96,8 @@ def _insert_slices_3d(
         image_rfft,
         weights,
         to_zyx_matrices(rotation_matrices, zyx_matrices),
-        shifts_2d,
-        shifts_3d,
+        to_zyx_vectors(shifts_2d, yx_shifts),
+        to_zyx_vectors(shifts_3d, zyx_shifts),
         oversampling,
         fftfreq_max,
         interpolation,
@@ -118,6 +120,8 @@ def insert_central_slices_rfft_3d(
     oversampling: float = 1.0,
     fftfreq_max: float | None = None,
     zyx_matrices: bool = False,
+    zyx_shifts: bool = False,
+    yx_shifts: bool = False,
     interpolation: str = "linear",
     apply_ewald_curvature: bool = False,
     ewald_voltage_kv: float = 300.0,
@@ -147,6 +151,8 @@ def insert_central_slices_rfft_3d(
         oversampling,
         fftfreq_max,
         zyx_matrices,
+        zyx_shifts,
+        yx_shifts,
         interpolation,
         apply_ewald_curvature,
         ewald_voltage_kv,
@@ -167,6 +173,8 @@ def insert_central_slices_rfft_3d_multichannel(
     oversampling: float = 1.0,
     fftfreq_max: float | None = None,
     zyx_matrices: bool = False,
+    zyx_shifts: bool = False,
+    yx_shifts: bool = False,
     interpolation: str = "linear",
     apply_ewald_curvature: bool = False,
     ewald_voltage_kv: float = 300.0,
@@ -196,6 +204,8 @@ def insert_central_slices_rfft_3d_multichannel(
         oversampling,
         fftfreq_max,
         zyx_matrices,
+        zyx_shifts,
+        yx_shifts,
         interpolation,
         apply_ewald_curvature,
         ewald_voltage_kv,
@@ -212,14 +222,16 @@ def _insert_lines_3d(
     shifts_3d,
     oversampling,
     fftfreq_max,
+    zyx_directions,
+    zyx_shifts,
     interpolation,
 ):
     """Run the differentiable kernel in its canonical ``(bv, bp, w)`` layout."""
     return InsertLines3D.apply(
         lines,
         weights,
-        directions,
-        shifts_3d,
+        to_zyx_vectors(directions, zyx_directions),
+        to_zyx_vectors(shifts_3d, zyx_shifts),
         oversampling,
         fftfreq_max,
         interpolation,
@@ -233,13 +245,16 @@ def insert_central_lines_rfft_3d(
     weights: torch.Tensor | None = None,
     oversampling: float = 1.0,
     fftfreq_max: float | None = None,
+    zyx_directions: bool = False,
+    zyx_shifts: bool = False,
     interpolation: str = "linear",
 ) -> tuple[torch.Tensor, torch.Tensor | None]:
     """Insert 1D central lines into one 3D rfft volume (Mojo scatter kernel).
 
     ``lines`` is ``(bp, w)`` complex rfft half-lines (DC at origin); its device
-    selects the backend. ``directions`` are ``(3,)`` / ``(bp, 3)`` zyx unit
-    vectors (same convention as the extractor). ``weights`` (optional, real,
+    selects the backend. ``directions`` are ``(3,)`` / ``(bp, 3)`` unit vectors
+    and ``shifts_3d`` volume-frame shifts, both xyz unless ``zyx_directions`` /
+    ``zyx_shifts`` is True. ``weights`` (optional, real,
     matching ``lines``) accumulate into a weight volume for density compensation.
 
     Returns ``(volume, weight_volume)`` -- complex ``(d, h, w)`` accumulated data
@@ -258,6 +273,8 @@ def insert_central_lines_rfft_3d(
         shifts_3d,
         oversampling,
         fftfreq_max,
+        zyx_directions,
+        zyx_shifts,
         interpolation,
     )
     if weights is None:
@@ -272,6 +289,8 @@ def insert_central_lines_rfft_3d_multichannel(
     weights: torch.Tensor | None = None,
     oversampling: float = 1.0,
     fftfreq_max: float | None = None,
+    zyx_directions: bool = False,
+    zyx_shifts: bool = False,
     interpolation: str = "linear",
 ) -> tuple[torch.Tensor, torch.Tensor | None]:
     """Insert 1D central lines into a batch of 3D rfft volumes (Mojo kernel).
@@ -294,9 +313,34 @@ def insert_central_lines_rfft_3d_multichannel(
         shifts_3d,
         oversampling,
         fftfreq_max,
+        zyx_directions,
+        zyx_shifts,
         interpolation,
     )
     return data, (weight_vol if weights is not None else None)
+
+
+def _insert_lines_2d(
+    lines,
+    weights,
+    directions,
+    shifts_2d,
+    oversampling,
+    fftfreq_max,
+    yx_directions,
+    yx_shifts,
+    interpolation,
+):
+    """Run the differentiable kernel in its canonical ``(bv, bp, w)`` layout."""
+    return InsertLines2D.apply(
+        lines,
+        weights,
+        to_zyx_vectors(directions, yx_directions),
+        to_zyx_vectors(shifts_2d, yx_shifts),
+        oversampling,
+        fftfreq_max,
+        interpolation,
+    )
 
 
 def insert_central_lines_rfft_2d(
@@ -306,26 +350,31 @@ def insert_central_lines_rfft_2d(
     weights: torch.Tensor | None = None,
     oversampling: float = 1.0,
     fftfreq_max: float | None = None,
+    yx_directions: bool = False,
+    yx_shifts: bool = False,
     interpolation: str = "linear",
 ) -> tuple[torch.Tensor, torch.Tensor | None]:
     """Insert 1D central lines into one 2D rfft image (Mojo scatter kernel).
 
-    ``lines`` is complex ``(bp, w)``; ``directions`` are ``(2,)`` / ``(bp, 2)`` yx
-    unit vectors; ``shifts_2d`` optional ``(..., bp, 2)`` yx translations (the
-    conjugate phase ramp is applied). Returns ``(image, weight_image)`` -- complex
+    ``lines`` is complex ``(bp, w)``; ``directions`` are ``(2,)`` / ``(bp, 2)``
+    unit vectors; ``shifts_2d`` optional ``(..., bp, 2)`` translations (the
+    conjugate phase ramp is applied). Both are xy unless ``yx_directions`` /
+    ``yx_shifts`` is True. Returns ``(image, weight_image)`` -- complex
     ``(h, w_rfft)`` and real weights (``None`` if ``weights`` is ``None``).
     """
     if lines.dim() != 2:
         raise ValueError(
             "lines must be (bp, w); use insert_central_lines_rfft_2d_multichannel"
         )
-    data, wimg = InsertLines2D.apply(
+    data, wimg = _insert_lines_2d(
         lines,
         weights,
         directions,
         shifts_2d,
         oversampling,
         fftfreq_max,
+        yx_directions,
+        yx_shifts,
         interpolation,
     )
     if weights is None:
@@ -340,6 +389,8 @@ def insert_central_lines_rfft_2d_multichannel(
     weights: torch.Tensor | None = None,
     oversampling: float = 1.0,
     fftfreq_max: float | None = None,
+    yx_directions: bool = False,
+    yx_shifts: bool = False,
     interpolation: str = "linear",
 ) -> tuple[torch.Tensor, torch.Tensor | None]:
     """Insert 1D central lines into a batch of 2D rfft images (Mojo kernel).
@@ -351,13 +402,15 @@ def insert_central_lines_rfft_2d_multichannel(
         raise ValueError("lines must be (bp, bv, w) for multi-image")
     lines_bv = lines.transpose(0, 1).contiguous()  # (bp, bv, w) -> (bv, bp, w)
     w = weights.transpose(0, 1).contiguous() if weights is not None else None
-    data, wimg = InsertLines2D.apply(
+    data, wimg = _insert_lines_2d(
         lines_bv,
         w,
         directions,
         shifts_2d,
         oversampling,
         fftfreq_max,
+        yx_directions,
+        yx_shifts,
         interpolation,
     )
     return data, (wimg if weights is not None else None)

@@ -32,6 +32,8 @@ def _backproject(
     pad_factor: float,
     fftfreq_max: float | None,
     zyx_matrices: bool,
+    zyx_shifts: bool,
+    yx_shifts: bool,
     interpolation: str,
     apply_ewald_curvature: bool,
     ewald_voltage_kv: float,
@@ -63,6 +65,8 @@ def _backproject(
         weights=density,
         fftfreq_max=fftfreq_max,
         zyx_matrices=zyx_matrices,
+        zyx_shifts=zyx_shifts,
+        yx_shifts=yx_shifts,
         interpolation=interpolation,
         apply_ewald_curvature=apply_ewald_curvature,
         ewald_voltage_kv=ewald_voltage_kv,
@@ -92,6 +96,8 @@ def backproject_2d_to_3d(
     pad_factor: float = 2.0,
     fftfreq_max: float | None = None,
     zyx_matrices: bool = False,
+    zyx_shifts: bool = False,
+    yx_shifts: bool = False,
     interpolation: str = "linear",
     apply_ewald_curvature: bool = False,
     ewald_voltage_kv: float = 300.0,
@@ -111,10 +117,10 @@ def backproject_2d_to_3d(
     rotation_matrices : torch.Tensor
         Real ``(3, 3)`` or ``(bp, 3, 3)`` rotation matrices (see ``zyx_matrices``).
     shifts_3d : torch.Tensor | None
-        Optional ``(..., bp, 3)`` zyx shifts in the volume frame; the conjugate
+        Optional ``(..., bp, 3)`` shifts in the volume frame; the conjugate
         phase ramp is applied (adjoint of the forward shift).
     shifts_2d : torch.Tensor | None
-        Optional ``(..., bp, 2)`` yx image-plane shifts; likewise conjugated.
+        Optional ``(..., bp, 2)`` image-plane shifts; likewise conjugated.
     weights : torch.Tensor | None
         Optional real per-pixel weights (e.g. CTF^2) on the *padded* rfft
         slices, modulating each sample's contribution to the density.
@@ -127,6 +133,10 @@ def backproject_2d_to_3d(
     zyx_matrices : bool
         If True, ``rotation_matrices`` act on zyx vectors. If False (default)
         they act on xyz vectors and are converted by flipping the last two axes.
+    zyx_shifts : bool
+        If True, ``shifts_3d`` are in zyx order. If False (default) they are xyz.
+    yx_shifts : bool
+        If True, ``shifts_2d`` are in yx order. If False (default) they are xy.
     interpolation : str
         ``"linear"`` (trilinear, default) or ``"cubic"`` (tricubic Catmull-Rom).
         The gridding correction follows this choice.
@@ -159,6 +169,8 @@ def backproject_2d_to_3d(
         pad_factor,
         fftfreq_max,
         zyx_matrices,
+        zyx_shifts,
+        yx_shifts,
         interpolation,
         apply_ewald_curvature,
         ewald_voltage_kv,
@@ -177,6 +189,8 @@ def backproject_2d_to_3d_multichannel(
     pad_factor: float = 2.0,
     fftfreq_max: float | None = None,
     zyx_matrices: bool = False,
+    zyx_shifts: bool = False,
+    yx_shifts: bool = False,
     interpolation: str = "linear",
     apply_ewald_curvature: bool = False,
     ewald_voltage_kv: float = 300.0,
@@ -202,6 +216,8 @@ def backproject_2d_to_3d_multichannel(
         pad_factor,
         fftfreq_max,
         zyx_matrices,
+        zyx_shifts,
+        yx_shifts,
         interpolation,
         apply_ewald_curvature,
         ewald_voltage_kv,
