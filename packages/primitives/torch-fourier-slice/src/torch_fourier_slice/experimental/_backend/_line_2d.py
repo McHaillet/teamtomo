@@ -70,14 +70,14 @@ def run_extract_lines_2d(
     img_r = torch.view_as_real(
         image_rfft.to(device=tgt, dtype=torch.complex64).contiguous()
     ).contiguous()
+    bufs = (img_r, dir_t, shifts_2d_t, line_r)
     if use_gpu:
-        bufs = (img_r, dir_t, shifts_2d_t, line_r)
         addrs = prepare_launch(device, bufs)
         kernels().extract_central_lines_rfft_2d_gpu(
-            device_session(), img_r, dir_t, shifts_2d_t, line_r, params, addrs
+            device_session(), bufs, params, addrs
         )
-        return torch.view_as_complex(line_r)
-    kernels().extract_central_lines_rfft_2d(img_r, dir_t, shifts_2d_t, line_r, params)
+    else:
+        kernels().extract_central_lines_rfft_2d(bufs, params)
     return torch.view_as_complex(line_r)
 
 

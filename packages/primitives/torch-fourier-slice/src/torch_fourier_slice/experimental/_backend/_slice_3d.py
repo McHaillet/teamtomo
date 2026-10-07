@@ -15,7 +15,6 @@ from ._loader import device_session, kernels
 from ._validation import (
     KernelParams,
     interp_code,
-    prep_poses,
     prep_rotations,
     prep_shifts_2d,
     prep_shifts_3d,
@@ -39,40 +38,58 @@ def run_extract_slices_3d(
     use_gpu = device.type != "cpu"
     tgt = device if use_gpu else torch.device("cpu")
     reconstruction, bv, sidelength, _sh = validate_reconstruction(reconstruction)
-    rot, shifts_2d_t, shifts_3d_t, proj_r, params = prep_poses(
+    rot, _bv_rot, bp = prep_rotations(rotations, bv, tgt)
+    shifts_2d_t, has_shifts_2d = prep_shifts_2d(shifts_2d, bv, bp, tgt)
+    shifts_3d_t, has_shifts_3d = prep_shifts_3d(shifts_3d, bv, bp, tgt)
+
+    if output_shape is None:
+        proj_sidelength = sidelength
+    else:
+        if len(output_shape) != 2 or output_shape[0] != output_shape[1]:
+            raise ValueError(f"output_shape {output_shape} must be square")
+        if output_shape[0] % 2 != 0:
+            raise ValueError(f"output side length {output_shape[0]} must be even")
+        proj_sidelength = int(output_shape[0])
+    proj_sidelength_half = proj_sidelength // 2 + 1
+
+    radius = (
+        proj_sidelength / 2.0
+        if fftfreq_max is None
+        else float(fftfreq_max) * proj_sidelength
+    )
+    # pre-zeroed: the kernel leaves radius-cut pixels untouched
+    proj_r = torch.zeros(
         bv,
-        sidelength,
-        rotations,
-        shifts_2d,
-        output_shape,
-        oversampling,
-        fftfreq_max,
-        interpolation,
-        ewald_curvature,
-        shifts_3d,
+        bp,
+        proj_sidelength,
+        proj_sidelength_half,
+        2,
+        dtype=torch.float32,
         device=tgt,
+    )
+    params = KernelParams(
+        oversampling=float(oversampling),
+        radius_cutoff_sq=float(radius * radius),
+        has_shifts_2d=int(has_shifts_2d),
+        has_weights=0,
+        friedel_double=0,
+        skip_redundant=0,
+        interp=interp_code(interpolation),
+        ewald_curvature=float(ewald_curvature),
+        has_shifts_3d=int(has_shifts_3d),
     )
 
     rec_r = torch.view_as_real(
         reconstruction.to(device=tgt, dtype=torch.complex64).contiguous()
     ).contiguous()
+    bufs = (rec_r, rot, shifts_2d_t, shifts_3d_t, proj_r)
     if use_gpu:
-        bufs = (rec_r, rot, shifts_2d_t, shifts_3d_t, proj_r)
         addrs = prepare_launch(device, bufs)
         kernels().extract_central_slices_rfft_3d_gpu(
-            device_session(),
-            rec_r,
-            rot,
-            shifts_2d_t,
-            shifts_3d_t,
-            proj_r,
-            params,
-            addrs,
+            device_session(), bufs, params, addrs
         )
-        return torch.view_as_complex(proj_r)
-    kernels().extract_central_slices_rfft_3d(
-        rec_r, rot, shifts_2d_t, shifts_3d_t, proj_r, params
-    )
+    else:
+        kernels().extract_central_slices_rfft_3d(bufs, params)
     return torch.view_as_complex(proj_r)
 
 

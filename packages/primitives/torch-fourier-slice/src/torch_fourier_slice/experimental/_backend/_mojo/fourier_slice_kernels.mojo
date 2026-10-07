@@ -254,24 +254,20 @@ def PyInit_fourier_slice_kernels() abi("C") -> PythonObject:
 
 
 def extract_central_slices_rfft_3d(
-    rec_obj: PythonObject,
-    rot_obj: PythonObject,
-    shifts_2d_obj: PythonObject,
-    shifts_3d_obj: PythonObject,
-    proj_obj: PythonObject,
-    params_obj: PythonObject,
+    bufs: PythonObject, params_obj: PythonObject
 ) raises -> PythonObject:
-    """Extract central slices on the CPU; writes `proj_obj` (pre-zeroed by the caller).
+    """Extract central slices on the CPU; writes `proj` (pre-zeroed by the caller).
+
+    bufs   : (rec, rot, shifts_2d, shifts_3d, proj) viewed as real.
+    params_obj : a `KernelParams` (read by field name; see `_validation.py`).
     """
-    var rec = _ptr(rec_obj)
-    var rot = _ptr(rot_obj)
-    var shifts_2d = _ptr(shifts_2d_obj)
-    var shifts_3d = _ptr(shifts_3d_obj)
-    var proj = _ptr(proj_obj)
-    var p = _extract_slice_3d_params(
-        rec_obj, rot_obj, shifts_2d_obj, shifts_3d_obj, proj_obj, params_obj
-    )
-    var bv = Int(py=rec_obj.shape[0])
+    var rec = _ptr(bufs[0])
+    var rot = _ptr(bufs[1])
+    var shifts_2d = _ptr(bufs[2])
+    var shifts_3d = _ptr(bufs[3])
+    var proj = _ptr(bufs[4])
+    var p = _extract_slice_3d_params(bufs, params_obj)
+    var bv = Int(py=bufs[0].shape[0])
 
     @parameter
     def worker[interp: Int](vp: Int):
@@ -346,22 +342,18 @@ def insert_central_slices_rfft_3d(
 
 
 def extract_central_lines_rfft_3d(
-    rec_obj: PythonObject,
-    direction_obj: PythonObject,
-    shifts_3d_obj: PythonObject,
-    line_obj: PythonObject,
-    params_obj: PythonObject,
+    bufs: PythonObject, params_obj: PythonObject
 ) raises -> PythonObject:
-    """Extract 1D central lines on the CPU; writes `line_obj` (pre-zeroed).
+    """Extract 1D central lines on the CPU; writes `line` (pre-zeroed).
+
+    bufs   : (rec, direction, shifts_3d, line) viewed as real.
     """
-    var rec = _ptr(rec_obj)
-    var direction = _ptr(direction_obj)
-    var shifts_3d = _ptr(shifts_3d_obj)
-    var line = _ptr(line_obj)
-    var p = _extract_line_3d_params(
-        rec_obj, direction_obj, shifts_3d_obj, line_obj, params_obj
-    )
-    var bv = Int(py=rec_obj.shape[0])
+    var rec = _ptr(bufs[0])
+    var direction = _ptr(bufs[1])
+    var shifts_3d = _ptr(bufs[2])
+    var line = _ptr(bufs[3])
+    var p = _extract_line_3d_params(bufs, params_obj)
+    var bv = Int(py=bufs[0].shape[0])
     var lsh = p.proj_sidelength_half()
 
     @parameter
@@ -423,22 +415,18 @@ def insert_central_lines_rfft_3d(
 
 
 def extract_central_lines_rfft_2d(
-    img_obj: PythonObject,
-    direction_obj: PythonObject,
-    shifts_2d_obj: PythonObject,
-    line_obj: PythonObject,
-    params_obj: PythonObject,
+    bufs: PythonObject, params_obj: PythonObject
 ) raises -> PythonObject:
     """Extract 1D central lines from 2D images on the CPU (pre-zeroed line).
+
+    bufs   : (img, direction, shifts_2d, line) viewed as real.
     """
-    var img = _ptr(img_obj)
-    var direction = _ptr(direction_obj)
-    var shifts_2d = _ptr(shifts_2d_obj)
-    var line = _ptr(line_obj)
-    var p = _extract_line_2d_params(
-        img_obj, direction_obj, shifts_2d_obj, line_obj, params_obj
-    )
-    var bv = Int(py=img_obj.shape[0])
+    var img = _ptr(bufs[0])
+    var direction = _ptr(bufs[1])
+    var shifts_2d = _ptr(bufs[2])
+    var line = _ptr(bufs[3])
+    var p = _extract_line_2d_params(bufs, params_obj)
+    var bv = Int(py=bufs[0].shape[0])
     var lsh = p.proj_sidelength_half()
 
     @parameter
@@ -930,27 +918,21 @@ def _session_ctx(session_obj: PythonObject) raises -> DeviceContext:
 
 def extract_central_slices_rfft_3d_gpu(
     session_obj: PythonObject,
-    rec_obj: PythonObject,
-    rot_obj: PythonObject,
-    shifts_2d_obj: PythonObject,
-    shifts_3d_obj: PythonObject,
-    proj_obj: PythonObject,
+    bufs: PythonObject,
     params_obj: PythonObject,
     addrs_obj: PythonObject,
 ) raises -> PythonObject:
     """Extract central slices on the GPU, reading/writing torch device memory directly.
 
     `addrs_obj` carries the raw device virtual addresses of, in order,
-    (rec, rot, shifts_2d, shifts_3d, proj), then the foreign (torch) GPU stream
+    bufs = (rec, rot, shifts_2d, shifts_3d, proj), then the foreign (torch) GPU stream
     address as the trailing element (0 to enqueue on the context's own stream;
     see `_launch_extract_slice_3d`). The tensor objects are used only for their shapes.
     `proj` is pre-zeroed on the device by the caller (radius-cut pixels stay 0,
     matching the CPU path). We sync the context only on the own-stream path.
     """
-    var p = _extract_slice_3d_params(
-        rec_obj, rot_obj, shifts_2d_obj, shifts_3d_obj, proj_obj, params_obj
-    )
-    var bv = Int(py=rec_obj.shape[0])
+    var p = _extract_slice_3d_params(bufs, params_obj)
+    var bv = Int(py=bufs[0].shape[0])
     var total = bv * p.bp * p.proj_sidelength * p.proj_sidelength_half()
     var stream_addr = Int(py=addrs_obj[5])  # trailing element after 5 buffers
 
@@ -1027,23 +1009,18 @@ def insert_central_slices_rfft_3d_gpu(
 
 def extract_central_lines_rfft_3d_gpu(
     session_obj: PythonObject,
-    rec_obj: PythonObject,
-    direction_obj: PythonObject,
-    shifts_3d_obj: PythonObject,
-    line_obj: PythonObject,
+    bufs: PythonObject,
     params_obj: PythonObject,
     addrs_obj: PythonObject,
 ) raises -> PythonObject:
     """Extract 1D central lines on the GPU, reading/writing torch memory.
 
-    `addrs_obj` carries device VAs of (rec, direction, shifts_3d, line) then the
+    `addrs_obj` carries device VAs of bufs = (rec, direction, shifts_3d, line) then the
     foreign stream address as the trailing element (0 for the own-stream path).
     `line` is pre-zeroed on the device by the caller (radius-cut pixels stay 0).
     """
-    var p = _extract_line_3d_params(
-        rec_obj, direction_obj, shifts_3d_obj, line_obj, params_obj
-    )
-    var bv = Int(py=rec_obj.shape[0])
+    var p = _extract_line_3d_params(bufs, params_obj)
+    var bv = Int(py=bufs[0].shape[0])
     var total = bv * p.bp * p.proj_sidelength_half()
     var stream_addr = Int(py=addrs_obj[4])  # trailing element after 4 buffers
 
@@ -1112,22 +1089,17 @@ def insert_central_lines_rfft_3d_gpu(
 
 def extract_central_lines_rfft_2d_gpu(
     session_obj: PythonObject,
-    img_obj: PythonObject,
-    direction_obj: PythonObject,
-    shifts_2d_obj: PythonObject,
-    line_obj: PythonObject,
+    bufs: PythonObject,
     params_obj: PythonObject,
     addrs_obj: PythonObject,
 ) raises -> PythonObject:
     """Extract 1D central lines from 2D images on the GPU (zero-copy).
 
-    `addrs_obj` holds device VAs of (img, direction, shifts_2d, line) then the
+    `addrs_obj` holds device VAs of bufs = (img, direction, shifts_2d, line) then the
     foreign stream address (index 4). `line` is pre-zeroed by caller.
     """
-    var p = _extract_line_2d_params(
-        img_obj, direction_obj, shifts_2d_obj, line_obj, params_obj
-    )
-    var bv = Int(py=img_obj.shape[0])
+    var p = _extract_line_2d_params(bufs, params_obj)
+    var bv = Int(py=bufs[0].shape[0])
     var total = bv * p.bp * p.proj_sidelength_half()
     var stream_addr = Int(py=addrs_obj[4])
 
@@ -1551,38 +1523,16 @@ def insert_central_slices_rfft_3d_weight_grad_gpu(
 
 @always_inline
 def _extract_slice_3d_params(
-    rec_obj: PythonObject,
-    rot_obj: PythonObject,
-    shifts_2d_obj: PythonObject,
-    shifts_3d_obj: PythonObject,
-    proj_obj: PythonObject,
-    params_obj: PythonObject,
+    bufs: PythonObject, params_obj: PythonObject
 ) raises -> FourierSliceParams:
-    return _extract_slice_3d_params_for_sidelength(
-        Int(py=rec_obj.shape[2]),
-        rot_obj,
-        shifts_2d_obj,
-        shifts_3d_obj,
-        proj_obj,
-        params_obj,
-    )
-
-
-@always_inline
-def _extract_slice_3d_params_for_sidelength(
-    sidelength: Int,
-    rot_obj: PythonObject,
-    shifts_2d_obj: PythonObject,
-    shifts_3d_obj: PythonObject,
-    proj_obj: PythonObject,
-    params_obj: PythonObject,
-) raises -> FourierSliceParams:
+    """Params for the slice extraction kernel; bufs = (rec, rot, shifts_2d, shifts_3d, proj).
+    """
     return FourierSliceParams(
-        bp=Int(py=rot_obj.shape[1]),
-        sidelength=sidelength,
-        proj_sidelength=Int(py=proj_obj.shape[2]),
-        bv_rot=Int(py=rot_obj.shape[0]),
-        bv_shift_2d=Int(py=shifts_2d_obj.shape[0]),
+        bp=Int(py=bufs[1].shape[1]),
+        sidelength=Int(py=bufs[0].shape[2]),
+        proj_sidelength=Int(py=bufs[4].shape[2]),
+        bv_rot=Int(py=bufs[1].shape[0]),
+        bv_shift_2d=Int(py=bufs[2].shape[0]),
         oversampling=Float32(py=params_obj.oversampling),
         radius_cutoff_sq=Float32(py=params_obj.radius_cutoff_sq),
         has_shifts_2d=Int(py=params_obj.has_shifts_2d),
@@ -1592,7 +1542,7 @@ def _extract_slice_3d_params_for_sidelength(
         skip_redundant=Int(py=params_obj.skip_redundant),
         ewald_curvature=Float32(py=params_obj.ewald_curvature),
         has_shifts_3d=Int(py=params_obj.has_shifts_3d),
-        bv_shift_3d=Int(py=shifts_3d_obj.shape[0]),
+        bv_shift_3d=Int(py=bufs[3].shape[0]),
     )
 
 
@@ -1677,21 +1627,17 @@ def _line_2d_grad_params(
 
 @always_inline
 def _extract_line_2d_params(
-    img_obj: PythonObject,
-    direction_obj: PythonObject,
-    shifts_2d_obj: PythonObject,
-    line_obj: PythonObject,
-    params_obj: PythonObject,
+    bufs: PythonObject, params_obj: PythonObject
 ) raises -> FourierSliceParams:
-    """Params for the forward 2D line kernel; `img_obj` real-view (bv, h, w, 2).
+    """Params for the 2D line extraction kernel; bufs = (img, direction, shifts_2d, line).
     """
-    var line_half = Int(py=line_obj.shape[2])
+    var line_half = Int(py=bufs[3].shape[2])
     return FourierSliceParams(
-        bp=Int(py=direction_obj.shape[1]),
-        sidelength=Int(py=img_obj.shape[1]),
+        bp=Int(py=bufs[1].shape[1]),
+        sidelength=Int(py=bufs[0].shape[1]),
         proj_sidelength=2 * (line_half - 1),
-        bv_rot=Int(py=direction_obj.shape[0]),
-        bv_shift_2d=Int(py=shifts_2d_obj.shape[0]),
+        bv_rot=Int(py=bufs[1].shape[0]),
+        bv_shift_2d=Int(py=bufs[2].shape[0]),
         oversampling=Float32(py=params_obj.oversampling),
         radius_cutoff_sq=Float32(py=params_obj.radius_cutoff_sq),
         has_shifts_2d=Int(py=params_obj.has_shifts_2d),
@@ -1733,24 +1679,20 @@ def _insert_line_2d_params(
 
 @always_inline
 def _extract_line_3d_params(
-    rec_obj: PythonObject,
-    direction_obj: PythonObject,
-    shifts_3d_obj: PythonObject,
-    line_obj: PythonObject,
-    params_obj: PythonObject,
+    bufs: PythonObject, params_obj: PythonObject
 ) raises -> FourierSliceParams:
-    """Params for the forward line kernel; `line_obj` is real-view (bv, bp, w, 2).
+    """Params for the line extraction kernel; bufs = (rec, direction, shifts_3d, line).
 
     Directions are `(bv_dir, bp, 3)`; `bv_rot` carries the direction broadcast
     batch `bv_dir`.
     """
-    var line_half = Int(py=line_obj.shape[2])
+    var line_half = Int(py=bufs[3].shape[2])
     return FourierSliceParams(
-        bp=Int(py=direction_obj.shape[1]),
-        sidelength=Int(py=rec_obj.shape[2]),
+        bp=Int(py=bufs[1].shape[1]),
+        sidelength=Int(py=bufs[0].shape[2]),
         proj_sidelength=2
         * (line_half - 1),  # even box whose rfft half-width is line_half
-        bv_rot=Int(py=direction_obj.shape[0]),
+        bv_rot=Int(py=bufs[1].shape[0]),
         bv_shift_2d=1,  # unused (a line has no image plane)
         oversampling=Float32(py=params_obj.oversampling),
         radius_cutoff_sq=Float32(py=params_obj.radius_cutoff_sq),
@@ -1761,7 +1703,7 @@ def _extract_line_3d_params(
         skip_redundant=0,
         ewald_curvature=0.0,  # unused for a 1D line
         has_shifts_3d=Int(py=params_obj.has_shifts_3d),
-        bv_shift_3d=Int(py=shifts_3d_obj.shape[0]),
+        bv_shift_3d=Int(py=bufs[2].shape[0]),
     )
 
 

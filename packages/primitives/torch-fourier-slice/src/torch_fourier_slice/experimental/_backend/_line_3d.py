@@ -76,14 +76,14 @@ def run_extract_lines_3d(
     rec_r = torch.view_as_real(
         reconstruction.to(device=tgt, dtype=torch.complex64).contiguous()
     ).contiguous()
+    bufs = (rec_r, dir_t, shifts_3d_t, line_r)
     if use_gpu:
-        bufs = (rec_r, dir_t, shifts_3d_t, line_r)
         addrs = prepare_launch(device, bufs)
         kernels().extract_central_lines_rfft_3d_gpu(
-            device_session(), rec_r, dir_t, shifts_3d_t, line_r, params, addrs
+            device_session(), bufs, params, addrs
         )
-        return torch.view_as_complex(line_r)
-    kernels().extract_central_lines_rfft_3d(rec_r, dir_t, shifts_3d_t, line_r, params)
+    else:
+        kernels().extract_central_lines_rfft_3d(bufs, params)
     return torch.view_as_complex(line_r)
 
 
